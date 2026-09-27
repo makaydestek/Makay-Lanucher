@@ -53,10 +53,17 @@ jobs:
           SHA_NAME="${APK}.sha256"
           printf '%s %s\n' "$HASH" "$APK" > "$SHA_NAME"
 
+          REMOTE_LINE=""
           if printf '%s\n' "${ASSETS[@]}" | grep -Fxq "$SHA_NAME"; then
-            echo "SHA dosyasi zaten var, guncelleniyor."
+            gh release download "$TAG" --repo "$REPO" --pattern "$SHA_NAME" --output /tmp/remote.sha256
+            REMOTE_LINE="$(tr -d '\r\n' < /tmp/remote.sha256)"
           fi
-          gh release upload "$TAG" "$SHA_NAME" --repo "$REPO" --clobber
+          LOCAL_LINE="$(tr -d '\r\n' < "$SHA_NAME")"
+          if [[ "$REMOTE_LINE" == "$LOCAL_LINE" ]]; then
+            echo "SHA dosyasi guncel, yukleme atlandi."
+          else
+            gh release upload "$TAG" "$SHA_NAME" --repo "$REPO" --clobber
+          fi
 
           CODE=1
           if [[ -f latest.json ]]; then
