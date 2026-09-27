@@ -3,6 +3,12 @@ name: Release
 on:
   release:
     types: [published, edited]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (ornek: v1.0.8)"
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -18,9 +24,16 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          TAG="${{ github.event.release.tag_name }}"
-          VERSION="${TAG#v}"
           REPO="${{ github.repository }}"
+          TAG="${{ github.event.release.tag_name || github.event.inputs.tag }}"
+          if [[ -z "$TAG" ]]; then
+            TAG="$(gh release list --repo "$REPO" --limit 1 --json tagName --jq '.[0].tagName')"
+          fi
+          if [[ -z "$TAG" ]]; then
+            echo "Tag bulunamadi."
+            exit 1
+          fi
+          VERSION="${TAG#v}"
 
           mapfile -t ASSETS < <(gh release view "$TAG" --repo "$REPO" --json assets --jq '.assets[].name')
           APK=""
