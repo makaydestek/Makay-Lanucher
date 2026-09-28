@@ -18,6 +18,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
 
       - name: APK hash ve latest.json
         env:
@@ -85,6 +87,7 @@ jobs:
             "versionCode": int("${CODE}"),
             "apkUrl": "${APK_URL}",
             "notes": "${APK}",
+            "sha256": "${HASH}",
           }
           open("latest.json", "w", encoding="utf-8").write(json.dumps(data, separators=(",", ":")))
           PY
@@ -96,5 +99,5 @@ jobs:
             echo "latest.json zaten guncel."
           else
             git commit -m "latest.json ${VERSION}"
-            git push
+            git push origin "HEAD:${{ github.event.repository.default_branch }}"
           fi
