@@ -1,0 +1,34 @@
+# IDE / sistem artiklari
+*.iml
+/.idea/
+.DS_Store
+.kotlin/
+/captures
+.externalNativeBuild
+.cxx
+
+# Gradle artiklari (asla commit edilmez)
+.gradle/
+/build
+/app/build
+
+# Makineye ozel
+/local.properties
+
+# Release imzalama anahtari - ASLA commit edilme (yedekini harici tutun!)
+keystore.properties
+keystore/
+*.jks
+*.keystore
+*.jceks
+
+# APK'lar git'e COMMIT EDILMEZ - yalnizca GitHub Release'lerde yasar.
+# Yerel cikti klasoru: APK/ (derlemeler buraya kopyalanir, otomatik Release).
+APK/
+
+# Uygulamanin guncelleme manifesti gh api ile main dalina gonderilir;
+# yerel kopyasi commit edilmez.
+*.apk
+*.ap_
+*.aab
+/latest.json
