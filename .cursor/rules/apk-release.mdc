@@ -1,0 +1,29 @@
+---
+description: APK yalnızca APK klasörüne çıkar; tek adımda derle + GitHub'a yayın
+alwaysApply: true
+---
+
+# APK derleme ve yayınlama
+
+Tek adım: `Apk Hazırla.bat`. Betik sırayla şunları yapar:
+
+1. `version.properties` içindeki sürümü artırır (`1.0.x` yama + `VERSION_CODE` +1).
+2. `gradlew :app:assembleRelease` ile derler.
+3. `APK/MakayLauncher-<sürüm>.apk` dosyasını hazırlar, eski `MakayLauncher-*.apk` ve `.apk.sha256` dosyalarını siler (yalnızca güncel sürüm kalır).
+4. `.apk.sha256` ve `latest.json` üretir (kök + `APK/`, BOM'suz UTF-8).
+5. GitHub Release oluşturur/yükleterek **iki dosyayı birlikte** yükler: `.apk` ve `.apk.sha256`.
+6. `latest.json` ve `version.properties` dosyalarını `main` dalına `gh api` ile yazar.
+7. Eski GitHub release'lerini siler; depoda yalnızca güncel sürüm kalır.
+
+## Kurallar
+
+- Kullanıcıya verilecek APK yalnızca `APK/` altında olur: `APK/MakayLauncher-1.0.x.apk`.
+  `app/build/outputs/...` teslim yeri değildir; oraya kopyalamayı da söyleme.
+- Yama sürümü `version.properties` içindeki `VERSION_NAME`'dir (`1.0.x`). `VERSION_CODE` her yayında +1 gider.
+- Uygulamanın güncelleme adresi `main/latest.json`'dur. `latest.json` içindeki `versionCode`
+  **yayımlanan APK'nın gerçek koduyla** aynı olmalıdır; ayrıca türetilmiş bir değer kullanma.
+- Etiket biçimi saf sürümdür: `1.0.15` (başında `v` yok). `latest.json` içindeki `apkUrl`
+  da aynı biçimde olmalıdır.
+- `release.yml` yok — yayında CI çalışmaz, manifest'i CI bozmaz. `ci.yml` yalnızca
+  push/PR'da birim testi ve lint çalıştırır (`permissions: contents: read`), yayına dokunmaz.
+- Sürüm artışı için yalnızca betiği kullan; `gradlew` tek başına sürüm artırmaz.
