@@ -12,7 +12,11 @@ import android.widget.Toast
 import com.makay.launcher.BuildConfig
 import com.makay.launcher.data.LauncherActionHandler
 import com.makay.launcher.data.LauncherComponents
+import com.makay.launcher.data.BootAutostartReceiver
+import com.makay.launcher.data.EngineeringMenus
+import com.makay.launcher.data.ParentalGate
 import com.makay.launcher.data.TvChannelPublisher
+import com.makay.launcher.data.TvRowEngine
 import com.makay.launcher.data.UpdateCheckResult
 import com.makay.launcher.data.UpdateChecker
 import com.makay.launcher.data.UpdateManager
@@ -36,6 +40,10 @@ import com.makay.launcher.domain.HomeUiState
 import com.makay.launcher.domain.InputSource
 import com.makay.launcher.domain.LauncherSettings
 import com.makay.launcher.domain.Overlay
+import com.makay.launcher.domain.TvCalibrationPattern
+import com.makay.launcher.domain.TvIdleAction
+import com.makay.launcher.domain.TvRowDef
+import com.makay.launcher.domain.TvWallpaperKind
 import com.makay.launcher.domain.forEdition
 import com.makay.launcher.data.WorkspaceEngine
 import com.makay.launcher.domain.PinnedWidget
@@ -76,6 +84,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     @Volatile private var publishedChannelKey: String? = null
     private var syncedEdition: AppEdition? = null
     private var updateChecked = false
+    private var lastIdleBump = System.currentTimeMillis()
 
     init {
         monitor.start()
@@ -140,13 +149,42 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 viewModelScope.launch(Dispatchers.IO) {
                     cachedShortcuts = app.shortcutIndex.all(visible)
                     if (profile.isTv) {
-                        val channelKey = visible.joinToString(",") { "${it.key}:${it.usageCount}" }
-                        if (channelKey != publishedChannelKey) {
-                            publishedChannelKey = channelKey
-                            TvChannelPublisher(getApplication()).publish(
-                                visible.sortedByDescending { it.usageCount }.ifEmpty { visible },
-                            )
+                        val lastUsed = app.usageStore.lastOpened()
+                        _state.update { it.copy(tvLastUsed = lastUsed) }
+                        recomputeTvRows()
+                        if (settings.tvChannelsEnabled) {
+                            val channelKey = visible.joinToString(",") { "${it.key}:${it.usageCount}" }
+                            if (channelKey != publishedChannelKey) {
+                                publishedChannelKey = channelKey
+                                TvChannelPublisher(getApplication()).publish(
+                                    visible.sortedByDescending { it.usageCount }.ifEmpty { visible },
+                                )
+                            }
                         }
+                    } else {
+                        _state.update { it.copy(tvRows = emptyList(), tvResolvedRows = emptyList()) }
+                    }
+                }
+            }
+        }
+        viewModelScope.launch {
+            app.tvLayoutStore.rows.collect { rows ->
+                _state.update { it.copy(tvRows = rows) }
+                if (_state.value.profile.isTv) recomputeTvRows()
+            }
+        }
+        viewModelScope.launch {
+            while (true) {
+                delay(15_000)
+                val settings = _state.value.settings
+                if (!_state.value.profile.isTv) continue
+                if (settings.tvIdleAction == TvIdleAction.NONE) continue
+                if (_state.value.overlay != Overlay.None) continue
+                val idleMs = settings.tvIdleMinutes.coerceIn(1, 120) * 60_000L
+                if (System.currentTimeMillis() - lastIdleBump >= idleMs) {
+                    when (settings.tvIdleAction) {
+                        TvIdleAction.SCREENSAVER, TvIdleAction.DIM -> open(Overlay.Idle)
+                        TvIdleAction.NONE -> Unit
                     }
                 }
             }
@@ -292,6 +330,20 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun launch(appInfo: AppInfo) {
+        bumpIdle()
+        val settings = _state.value.settings
+        if (ParentalGate.isPackageBlocked(settings, appInfo.packageName) &&
+            System.currentTimeMillis() > _state.value.parentalUnlockUntil
+        ) {
+            _state.update {
+                it.copy(
+                    overlay = Overlay.ParentalPin,
+                    pendingParentalApp = appInfo,
+                    pendingParentalInput = null,
+                )
+            }
+            return
+        }
         if (appInfo.packageName in _state.value.locked && _state.value.profile.biometric) {
             authenticate?.invoke("${appInfo.label} kilitli") { ok ->
                 if (ok) completeLaunch(appInfo)
@@ -307,6 +359,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             delay(300)
             app.appsStore.reload()
+            if (_state.value.profile.isTv) {
+                _state.update { it.copy(tvLastUsed = app.usageStore.lastOpened()) }
+                recomputeTvRows()
+            }
         }
     }
 
@@ -829,7 +885,191 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun launchInput(source: InputSource) {
         if (!_state.value.profile.tvInputs) return
+        bumpIdle()
+        val settings = _state.value.settings
+        if (ParentalGate.isInputBlocked(settings, source.id) &&
+            System.currentTimeMillis() > _state.value.parentalUnlockUntil
+        ) {
+            _state.update {
+                it.copy(
+                    overlay = Overlay.ParentalPin,
+                    pendingParentalInput = source,
+                    pendingParentalApp = null,
+                )
+            }
+            return
+        }
         app.tvInputStore.launch(source)
+    }
+
+    fun bumpIdle() {
+        lastIdleBump = System.currentTimeMillis()
+        if (_state.value.overlay == Overlay.Idle) {
+            _state.update { it.copy(overlay = Overlay.None) }
+        }
+    }
+
+    fun dismissIdle() {
+        bumpIdle()
+        closeOverlays()
+    }
+
+    fun setTvFocusedRow(id: String) {
+        if (_state.value.tvFocusedRowId == id) return
+        _state.update { it.copy(tvFocusedRowId = id) }
+        recomputeTvRows()
+    }
+
+    fun updateTvRow(id: String, transform: (TvRowDef) -> TvRowDef) {
+        viewModelScope.launch {
+            app.tvLayoutStore.update { rows ->
+                rows.map { if (it.id == id) transform(it) else it }
+            }
+        }
+    }
+
+    fun moveTvRow(id: String, delta: Int) {
+        viewModelScope.launch {
+            app.tvLayoutStore.update { TvRowEngine.move(it, id, delta) }
+        }
+    }
+
+    fun setDefaultTvRow(id: String) {
+        viewModelScope.launch {
+            app.tvLayoutStore.update { TvRowEngine.setDefault(it, id) }
+        }
+    }
+
+    fun removeTvRow(id: String) {
+        viewModelScope.launch {
+            app.tvLayoutStore.update { rows -> rows.filterNot { it.id == id && it.builtin == null } }
+        }
+    }
+
+    fun addCustomTvRowFromFavorites() {
+        viewModelScope.launch {
+            val keys = _state.value.favorites.map { it.key }
+            if (keys.isEmpty()) {
+                toast("Önce favori uygulama ekleyin")
+                return@launch
+            }
+            app.tvLayoutStore.update { it + TvRowEngine.newCustom("Özel satır", keys) }
+            toast("Özel satır eklendi")
+        }
+    }
+
+    fun resetTvRows() {
+        viewModelScope.launch { app.tvLayoutStore.replace(TvRowEngine.defaultLayout()) }
+    }
+
+    fun setCalibrationPattern(pattern: TvCalibrationPattern) {
+        _state.update { it.copy(calibrationPattern = pattern) }
+    }
+
+    fun openCalibration() {
+        if (!_state.value.profile.isTv) return
+        open(Overlay.Calibration)
+    }
+
+    fun openEngineeringMenu(label: String) {
+        val entry = EngineeringMenus.available(getApplication()).firstOrNull { it.label == label }
+        if (entry == null) {
+            toast("Menü bulunamadı")
+            return
+        }
+        actionHandler.startSafe(entry.intent)
+    }
+
+    fun refreshEngineeringMenus() {
+        if (!_state.value.profile.isTv) return
+        val labels = EngineeringMenus.available(getApplication()).map { it.label }
+        _state.update { it.copy(engineeringMenus = labels) }
+    }
+
+    fun setTvWallpaper(uri: String, kind: TvWallpaperKind) {
+        updateSettings { it.copy(tvWallpaperUri = uri, tvWallpaperKind = kind) }
+    }
+
+    fun applyTvWallpaperUri(uri: Uri) {
+        val context = getApplication<Application>()
+        runCatching {
+            context.contentResolver.takePersistableUriPermission(
+                uri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION,
+            )
+        }
+        val mime = context.contentResolver.getType(uri).orEmpty().lowercase()
+        val path = uri.toString().lowercase()
+        val kind = when {
+            mime.contains("gif") || path.contains(".gif") -> TvWallpaperKind.GIF
+            mime.startsWith("video") || path.contains(".mp4") || path.contains(".webm") -> TvWallpaperKind.VIDEO
+            else -> TvWallpaperKind.IMAGE
+        }
+        setTvWallpaper(uri.toString(), kind)
+    }
+
+    fun clearTvWallpaper() {
+        updateSettings { it.copy(tvWallpaperUri = "", tvWallpaperKind = TvWallpaperKind.NONE) }
+    }
+
+    fun setParentalPin(pin: String) {
+        val hash = if (pin.isBlank()) "" else ParentalGate.hashPin(pin)
+        updateSettings { it.copy(tvParentalPinHash = hash) }
+    }
+
+    fun submitParentalPin(pin: String): Boolean {
+        val settings = _state.value.settings
+        if (!ParentalGate.verifyPin(settings, pin)) return false
+        _state.update { it.copy(parentalUnlockUntil = System.currentTimeMillis() + 30 * 60_000L) }
+        val appPending = _state.value.pendingParentalApp
+        val inputPending = _state.value.pendingParentalInput
+        _state.update { it.copy(pendingParentalApp = null, pendingParentalInput = null, overlay = Overlay.None) }
+        when {
+            appPending != null -> completeLaunch(appPending)
+            inputPending != null -> app.tvInputStore.launch(inputPending)
+        }
+        return true
+    }
+
+    fun toggleBlockedPackage(packageName: String) {
+        updateSettings { settings ->
+            val set = settings.tvBlockedPackages.split(',').map { it.trim() }.filter { it.isNotEmpty() }.toMutableSet()
+            if (!set.add(packageName)) set.remove(packageName)
+            settings.copy(tvBlockedPackages = set.joinToString(","))
+        }
+    }
+
+    fun setAutostartApp(appInfo: AppInfo?) {
+        updateSettings { it.copy(tvAutostartKey = appInfo?.key.orEmpty()) }
+    }
+
+    fun setAutostartInput(source: InputSource?) {
+        updateSettings { it.copy(tvAutostartKey = source?.let { s -> "input:${s.id}" }.orEmpty()) }
+    }
+
+    fun consumeBootAutostart() {
+        if (!BootAutostartReceiver.consumePending(getApplication())) return
+        if (!_state.value.profile.isTv) return
+        val key = _state.value.settings.tvAutostartKey
+        if (key.isBlank()) return
+        viewModelScope.launch {
+            delay(800)
+            if (key.startsWith("input:")) {
+                val id = key.removePrefix("input:")
+                _state.value.inputSources.find { it.id == id }?.let { launchInput(it) }
+            } else {
+                _state.value.apps.find { it.key == key }?.let { launch(it) }
+            }
+        }
+    }
+
+    private fun recomputeTvRows() {
+        val snapshot = _state.value
+        if (!snapshot.profile.isTv) return
+        val layout = snapshot.tvRows.ifEmpty { TvRowEngine.defaultLayout() }
+        val hideId = if (snapshot.settings.tvHideRowsAboveFocus) snapshot.tvFocusedRowId else null
+        val resolved = TvRowEngine.resolve(layout, snapshot, snapshot.tvLastUsed, hideId)
+        _state.update { it.copy(tvResolvedRows = resolved) }
     }
 
     fun exportBackup(uri: Uri) {
@@ -896,17 +1136,28 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         if (!profile.notificationBadges) {
             _state.update { it.copy(badges = emptyMap()) }
         }
+        if (profile.isTv) {
+            refreshEngineeringMenus()
+            viewModelScope.launch {
+                if (app.tvLayoutStore.snapshot().isEmpty()) {
+                    app.tvLayoutStore.replace(TvRowEngine.defaultLayout())
+                }
+            }
+        }
     }
 
     private fun overlayAllowed(overlay: Overlay): Boolean {
         val profile = _state.value.profile
         return when (overlay) {
-            Overlay.None, Overlay.Settings, Overlay.Onboarding, Overlay.Update -> true
+            Overlay.None, Overlay.Settings, Overlay.Onboarding, Overlay.Update,
+            Overlay.ParentalPin,
+            -> true
             Overlay.Drawer, Overlay.Search -> profile.isChosen
             Overlay.ControlCenter -> profile.controlCenter
             Overlay.WidgetPicker -> profile.widgets
             Overlay.Vault -> profile.vault
             Overlay.Folder -> profile.folders
+            Overlay.Idle, Overlay.Calibration, Overlay.TvRows -> profile.isTv
         }
     }
 

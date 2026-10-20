@@ -64,6 +64,11 @@
     <string name="section_quick_actions">Quick Actions</string>
     <string name="section_backup">Backup &amp; Restore</string>
     <string name="section_grid">Grid</string>
+    <string name="section_about">About</string>
+    <string name="about_version">Version: %1$s</string>
+    <string name="about_developer_title">Developer</string>
+    <string name="about_developer_body">The design and development of this application were made by Murat AKAY.</string>
+    <string name="about_copyright">© 2026 All rights reserved. Prepared for sideload / local distribution.</string>
     <string name="weather_clear">Clear</string>
     <string name="weather_partly_cloudy">Partly cloudy</string>
     <string name="weather_fog">Fog</string>

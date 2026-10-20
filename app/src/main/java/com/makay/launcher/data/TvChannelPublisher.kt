@@ -52,10 +52,16 @@ class TvChannelPublisher(private val context: Context) {
         }
         apps.forEachIndexed { index, app ->
             val launch = launchIntent(app)
+            val subtitle = when {
+                name == CHANNEL_WATCH -> "İzlemeye devam · açılış ${app.usageCount}"
+                app.category == AppCategory.Games -> "Oyun"
+                app.category == AppCategory.Media -> "Medya"
+                else -> app.category.title
+            }
             val program = PreviewProgram.Builder()
                 .setChannelId(channelId)
                 .setTitle(app.label)
-                .setDescription(app.packageName)
+                .setDescription(subtitle)
                 .setIntent(launch)
                 .setWeight(1000 - index)
                 .build()

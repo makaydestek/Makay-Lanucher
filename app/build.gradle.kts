@@ -126,6 +126,7 @@ dependencies {
     // Coil 3.x – Kotlin/Coroutines-first, Compose entegrasyonu
     implementation("io.coil-kt.coil3:coil:3.1.0")
     implementation("io.coil-kt.coil3:coil-compose:3.1.0")
+    implementation("io.coil-kt.coil3:coil-gif:3.1.0")
     implementation("io.coil-kt.coil3:coil-network-okhttp:3.1.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
     implementation("androidx.window:window:1.4.0")

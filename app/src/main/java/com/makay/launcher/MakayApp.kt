@@ -22,6 +22,7 @@ import com.makay.launcher.data.SettingsStore
 import com.makay.launcher.data.ShortcutIndex
 import com.makay.launcher.data.AppIconFetcher
 import com.makay.launcher.data.TvInputStore
+import com.makay.launcher.data.TvLayoutStore
 import com.makay.launcher.data.UsageStore
 import com.makay.launcher.data.WallpaperFetcher
 import com.makay.launcher.data.WallpaperPalette
@@ -52,6 +53,8 @@ class MakayApp : Application(), SingletonImageLoader.Factory {
         private set
     lateinit var tvInputStore: TvInputStore
         private set
+    lateinit var tvLayoutStore: TvLayoutStore
+        private set
     lateinit var glanceIntel: GlanceIntel
         private set
     lateinit var shortcutIndex: ShortcutIndex
@@ -79,11 +82,14 @@ class MakayApp : Application(), SingletonImageLoader.Factory {
         wallpaperFetcher = WallpaperFetcher(this)
         widgetController = WidgetController(this)
         tvInputStore = TvInputStore(this)
+        tvLayoutStore = TvLayoutStore(this)
         glanceIntel = GlanceIntel(this)
         shortcutIndex = ShortcutIndex(this)
         workspaceStore = WorkspaceStore(this)
         weatherStore = WeatherStore(this)
-        backupRepository = BackupRepository(this, settingsStore, favoritesStore, widgetController, workspaceStore)
+        backupRepository = BackupRepository(
+            this, settingsStore, favoritesStore, widgetController, workspaceStore, tvLayoutStore,
+        )
     }
 
     override fun newImageLoader(context: android.content.Context): ImageLoader =

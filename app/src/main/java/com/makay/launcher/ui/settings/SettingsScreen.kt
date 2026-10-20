@@ -6,6 +6,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -14,9 +15,16 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -39,17 +47,25 @@ import com.makay.launcher.ui.components.dpadClickable
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.makay.launcher.R
 import com.makay.launcher.BuildConfig
+import android.net.Uri
 import com.makay.launcher.domain.AppEdition
 import com.makay.launcher.domain.FormFactor
 import com.makay.launcher.domain.GestureAction
 import com.makay.launcher.domain.HomeStyle
 import com.makay.launcher.domain.HomeUiState
 import com.makay.launcher.domain.IconShape
+import com.makay.launcher.domain.Overlay
+import com.makay.launcher.domain.TvCardSize
+import com.makay.launcher.domain.TvFocusEffect
+import com.makay.launcher.domain.TvIdleAction
+import com.makay.launcher.domain.TvWallpaperKind
 import com.makay.launcher.ui.HomeViewModel
 import com.makay.launcher.ui.components.GlassPanel
 import com.makay.launcher.ui.theme.GlassStrong
@@ -72,11 +88,18 @@ fun SettingsScreen(state: HomeUiState, viewModel: HomeViewModel) {
     val importBackup = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument(),
     ) { uri -> uri?.let(viewModel::importBackup) }
+    val pickTvWallpaper = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri: Uri? ->
+        uri ?: return@rememberLauncherForActivityResult
+        viewModel.applyTvWallpaperUri(uri)
+    }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     var diagTick by remember { mutableIntStateOf(0) }
     var usageAccess by remember { mutableStateOf(false) }
     var notificationAccess by remember { mutableStateOf(false) }
     var crashLog by remember { mutableStateOf("") }
+    var parentalPinDraft by remember { mutableStateOf("") }
     LaunchedEffect(lifecycle, diagTick) {
         lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             usageAccess = withContext(Dispatchers.IO) { viewModel.hasUsageAccess() }
@@ -248,6 +271,194 @@ fun SettingsScreen(state: HomeUiState, viewModel: HomeViewModel) {
             }
         }
 
+        if (profile.isTv) {
+            Section("TV · Satırlar") {
+                DpadAction("Satır düzenleyici") { viewModel.open(Overlay.TvRows) }
+                Toggle("Odak üstü satırları gizle", settings.tvHideRowsAboveFocus) {
+                    viewModel.updateSettings { s -> s.copy(tvHideRowsAboveFocus = it) }
+                }
+                Toggle("Önizleme kanalları (Watch Next)", settings.tvChannelsEnabled) {
+                    viewModel.updateSettings { s -> s.copy(tvChannelsEnabled = it) }
+                }
+            }
+
+            Section("TV · Kart görünümü") {
+                Text("Boyut", color = Paper.copy(alpha = 0.7f), fontSize = 12.sp)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    TvCardSize.entries.forEach { size ->
+                        DpadChip(
+                            when (size) {
+                                TvCardSize.SMALL -> "Küçük"
+                                TvCardSize.MEDIUM -> "Orta"
+                                TvCardSize.LARGE -> "Büyük"
+                            },
+                            settings.tvCardSize == size,
+                        ) { viewModel.updateSettings { it.copy(tvCardSize = size) } }
+                    }
+                }
+                Text("Odak efekti", color = Paper.copy(alpha = 0.7f), fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    TvFocusEffect.entries.forEach { effect ->
+                        DpadChip(
+                            when (effect) {
+                                TvFocusEffect.SCALE -> "Ölçek"
+                                TvFocusEffect.GLOW -> "Parıltı"
+                                TvFocusEffect.SHADOW -> "Gölge"
+                                TvFocusEffect.NONE -> "Yok"
+                            },
+                            settings.tvFocusEffect == effect,
+                        ) { viewModel.updateSettings { it.copy(tvFocusEffect = effect) } }
+                    }
+                }
+                Text("Köşe / saydamlık", color = Paper.copy(alpha = 0.7f), fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf(8, 14, 18, 24).forEach { corner ->
+                        DpadChip("${corner}dp", settings.tvCardCorner == corner) {
+                            viewModel.updateSettings { it.copy(tvCardCorner = corner) }
+                        }
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 6.dp)) {
+                    listOf(0.55f, 0.7f, 0.85f, 1f).forEach { opacity ->
+                        DpadChip("${(opacity * 100).toInt()}%", settings.tvCardOpacity == opacity) {
+                            viewModel.updateSettings { it.copy(tvCardOpacity = opacity) }
+                        }
+                    }
+                }
+            }
+
+            Section("TV · Duvar kağıdı") {
+                Text(
+                    when (settings.tvWallpaperKind) {
+                        TvWallpaperKind.NONE -> "Özel wallpaper kapalı (sistem)"
+                        else -> "${settings.tvWallpaperKind.name} seçili"
+                    },
+                    color = Paper.copy(alpha = 0.75f),
+                    fontSize = 12.sp,
+                )
+                DpadAction("Görsel / GIF seç") { pickTvWallpaper.launch(arrayOf("image/*")) }
+                DpadAction("Video seç") { pickTvWallpaper.launch(arrayOf("video/*")) }
+                DpadAction("Özel wallpaper temizle", onClick = viewModel::clearTvWallpaper)
+                Text("Karartma", color = Paper.copy(alpha = 0.7f), fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf(0.15f, 0.35f, 0.55f, 0.75f).forEach { dim ->
+                        DpadChip("${(dim * 100).toInt()}%", settings.tvWallpaperDim == dim) {
+                            viewModel.updateSettings { it.copy(tvWallpaperDim = dim) }
+                        }
+                    }
+                }
+                Text("Parlaklık / bulanıklık", color = Paper.copy(alpha = 0.7f), fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf(0.5f, 0.75f, 1f).forEach { bright ->
+                        DpadChip("P${(bright * 100).toInt()}", settings.tvWallpaperBrightness == bright) {
+                            viewModel.updateSettings { it.copy(tvWallpaperBrightness = bright) }
+                        }
+                    }
+                    listOf(0, 8, 16, 24).forEach { blur ->
+                        DpadChip("B$blur", settings.tvWallpaperBlur == blur) {
+                            viewModel.updateSettings { it.copy(tvWallpaperBlur = blur) }
+                        }
+                    }
+                }
+            }
+
+            Section("TV · Açılış / boşta") {
+                Text(
+                    if (settings.tvAutostartKey.isBlank()) "Autostart kapalı"
+                    else "Autostart: ${settings.tvAutostartKey}",
+                    color = Paper.copy(alpha = 0.75f),
+                    fontSize = 12.sp,
+                )
+                DpadAction("Autostart: ilk favori") {
+                    viewModel.setAutostartApp(state.favorites.firstOrNull())
+                }
+                DpadAction("Autostart: ilk HDMI") {
+                    viewModel.setAutostartInput(state.inputSources.firstOrNull())
+                }
+                DpadAction("Autostart kapat") { viewModel.setAutostartApp(null) }
+                Text("Boşta kalınca", color = Paper.copy(alpha = 0.7f), fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    TvIdleAction.entries.forEach { action ->
+                        DpadChip(
+                            when (action) {
+                                TvIdleAction.NONE -> "Yok"
+                                TvIdleAction.SCREENSAVER -> "Koruyucu"
+                                TvIdleAction.DIM -> "Karart"
+                            },
+                            settings.tvIdleAction == action,
+                        ) { viewModel.updateSettings { it.copy(tvIdleAction = action) } }
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 6.dp)) {
+                    listOf(2, 5, 10, 15).forEach { min ->
+                        DpadChip("${min}dk", settings.tvIdleMinutes == min) {
+                            viewModel.updateSettings { it.copy(tvIdleMinutes = min) }
+                        }
+                    }
+                }
+            }
+
+            Section("TV · Ebeveyn kontrolü") {
+                Toggle("Ebeveyn kilidi", settings.tvParentalEnabled) {
+                    viewModel.updateSettings { s -> s.copy(tvParentalEnabled = it) }
+                }
+                Toggle("Zaman aralığı kullan", settings.tvParentalSchedule) {
+                    viewModel.updateSettings { s -> s.copy(tvParentalSchedule = it) }
+                }
+                Text(
+                    "Aktif pencere: ${settings.tvParentalStartMin / 60}:${"%02d".format(settings.tvParentalStartMin % 60)} – ${settings.tvParentalEndMin / 60}:${"%02d".format(settings.tvParentalEndMin % 60)}",
+                    color = Paper.copy(alpha = 0.65f),
+                    fontSize = 12.sp,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    DpadChip("21:00–07:00", selected = settings.tvParentalStartMin == 21 * 60) {
+                        viewModel.updateSettings { it.copy(tvParentalStartMin = 21 * 60, tvParentalEndMin = 7 * 60) }
+                    }
+                    DpadChip("Tüm gün", selected = !settings.tvParentalSchedule) {
+                        viewModel.updateSettings { it.copy(tvParentalSchedule = false) }
+                    }
+                }
+                Text("PIN (4–8 rakam)", color = Paper.copy(alpha = 0.7f), fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
+                androidx.compose.foundation.text.BasicTextField(
+                    value = parentalPinDraft,
+                    onValueChange = { parentalPinDraft = it.filter { ch -> ch.isDigit() }.take(8) },
+                    textStyle = androidx.compose.ui.text.TextStyle(color = Paper, fontSize = 16.sp),
+                    cursorBrush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.primary),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                )
+                DpadAction("PIN kaydet") {
+                    viewModel.setParentalPin(parentalPinDraft)
+                    parentalPinDraft = ""
+                }
+                Text("Favorileri engelle (dokunarak)", color = Paper.copy(alpha = 0.7f), fontSize = 12.sp)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    state.favorites.take(8).forEach { appInfo ->
+                        val blocked = settings.tvBlockedPackages.split(',').map { it.trim() }.contains(appInfo.packageName)
+                        DpadChip(appInfo.label.take(10), selected = blocked) {
+                            viewModel.toggleBlockedPackage(appInfo.packageName)
+                        }
+                    }
+                }
+            }
+
+            Section("TV · Kalibrasyon / mühendislik") {
+                DpadAction("Kalibrasyon desenleri", onClick = viewModel::openCalibration)
+                if (state.engineeringMenus.isEmpty()) {
+                    Text(
+                        "Cihazda bilinen mühendislik menüsü bulunamadı",
+                        color = Paper.copy(alpha = 0.65f),
+                        fontSize = 12.sp,
+                    )
+                    DpadAction("Yeniden tara", onClick = viewModel::refreshEngineeringMenus)
+                } else {
+                    state.engineeringMenus.forEach { label ->
+                        DpadAction(label) { viewModel.openEngineeringMenu(label) }
+                    }
+                }
+            }
+        }
+
         Section(stringResource(R.string.section_usage_badges)) {
             Text(
                 if (usageAccess) "Kullanım erişimi açık · sık kullanılanlar sistem verisiyle sıralanır"
@@ -373,13 +584,91 @@ fun SettingsScreen(state: HomeUiState, viewModel: HomeViewModel) {
             }
         }
 
-            Text(
-            "Makay Launcher ${BuildConfig.VERSION_NAME} · Mobil / TV sürüm profilleri",
-            color = Paper.copy(alpha = 0.5f),
-            fontSize = 12.sp,
-            modifier = Modifier.padding(top = 24.dp, bottom = 32.dp),
+        AboutSection()
+        Spacer(Modifier.height(32.dp))
+    }
+}
+
+/**
+ * Ayarlar → Hakkında alanı.
+ *
+ * Makay ekosistemindeki tüm uygulamalarda aynı sıra korunur:
+ * ikonlu başlık, uygulama adı + sürüm, geliştirici ve telif satırı.
+ */
+@Composable
+private fun AboutSection() {
+    Spacer(Modifier.height(16.dp))
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.padding(bottom = 10.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .size(30.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(MaterialTheme.colorScheme.primary),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Info,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onPrimary,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+        Spacer(Modifier.width(10.dp))
+        Text(
+            stringResource(R.string.section_about),
+            color = Paper,
+            style = MaterialTheme.typography.headlineSmall,
         )
     }
+    GlassPanel(modifier = Modifier.fillMaxWidth()) {
+        Column {
+            Text(
+                stringResource(R.string.app_name),
+                color = Paper,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                stringResource(R.string.about_version, BuildConfig.VERSION_NAME),
+                color = Paper.copy(alpha = 0.65f),
+                fontSize = 14.sp,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+            AboutDivider()
+            Text(
+                stringResource(R.string.about_developer_title),
+                color = Paper,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                stringResource(R.string.about_developer_body),
+                color = Paper.copy(alpha = 0.8f),
+                fontSize = 14.sp,
+                lineHeight = 20.sp,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+            AboutDivider()
+            Text(
+                stringResource(R.string.about_copyright),
+                color = Paper.copy(alpha = 0.55f),
+                fontSize = 12.sp,
+                lineHeight = 16.sp,
+            )
+        }
+    }
+}
+
+@Composable
+private fun AboutDivider() {
+    HorizontalDivider(
+        modifier = Modifier.padding(vertical = 14.dp),
+        color = Paper.copy(alpha = 0.12f),
+        thickness = 1.dp,
+    )
 }
 
 @Composable

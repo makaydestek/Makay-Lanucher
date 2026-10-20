@@ -27,6 +27,10 @@ enum class Overlay {
     Folder,
     Onboarding,
     Update,
+    Idle,
+    Calibration,
+    ParentalPin,
+    TvRows,
 }
 
 enum class GestureAction {
@@ -115,6 +119,31 @@ data class LauncherSettings(
     val updateUrl: String = "",
     val postponedVersionCode: Int = 0,
     val postponedUntil: Long = 0L,
+    // TV — kart görünümü
+    val tvCardSize: TvCardSize = TvCardSize.MEDIUM,
+    val tvCardCorner: Int = 18,
+    val tvCardOpacity: Float = 0.85f,
+    val tvFocusEffect: TvFocusEffect = TvFocusEffect.SCALE,
+    val tvHideRowsAboveFocus: Boolean = false,
+    val tvChannelsEnabled: Boolean = true,
+    // TV — wallpaper
+    val tvWallpaperKind: TvWallpaperKind = TvWallpaperKind.NONE,
+    val tvWallpaperUri: String = "",
+    val tvWallpaperBrightness: Float = 1f,
+    val tvWallpaperBlur: Int = 0,
+    val tvWallpaperDim: Float = 0.35f,
+    // TV — boot / idle
+    val tvAutostartKey: String = "",
+    val tvIdleAction: TvIdleAction = TvIdleAction.NONE,
+    val tvIdleMinutes: Int = 5,
+    // TV — ebeveyn
+    val tvParentalEnabled: Boolean = false,
+    val tvParentalPinHash: String = "",
+    val tvParentalSchedule: Boolean = false,
+    val tvParentalStartMin: Int = 21 * 60,
+    val tvParentalEndMin: Int = 7 * 60,
+    val tvBlockedPackages: String = "",
+    val tvBlockedInputs: String = "",
 )
 
 enum class IconShape {
@@ -217,6 +246,15 @@ data class HomeUiState(
     val profile: EditionProfile = EditionProfile.of(AppEdition.UNSET),
     val pendingUpdate: UpdateOffer? = null,
     val updateStatus: String = "",
+    val tvRows: List<TvRowDef> = emptyList(),
+    val tvResolvedRows: List<TvResolvedRow> = emptyList(),
+    val tvFocusedRowId: String? = null,
+    val tvLastUsed: Map<String, Long> = emptyMap(),
+    val parentalUnlockUntil: Long = 0L,
+    val pendingParentalApp: AppInfo? = null,
+    val pendingParentalInput: InputSource? = null,
+    val calibrationPattern: TvCalibrationPattern = TvCalibrationPattern.COLOR_BARS,
+    val engineeringMenus: List<String> = emptyList(),
 )
 
 data class UpdateOffer(

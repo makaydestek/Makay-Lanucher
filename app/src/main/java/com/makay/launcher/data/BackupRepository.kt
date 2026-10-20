@@ -14,13 +14,14 @@ class BackupRepository(
     private val favoritesStore: FavoritesStore,
     private val widgetController: WidgetController,
     private val workspaceStore: WorkspaceStore,
+    private val tvLayoutStore: TvLayoutStore,
 ) {
     suspend fun exportTo(uri: Uri) {
         val settings = settingsStore.snapshot()
         val favorites = favoritesStore.snapshot()
         val widgets = widgetController.snapshotPinned()
         val json = JSONObject()
-            .put("version", 2)
+            .put("version", 3)
             .put(
                 "settings",
                 JSONObject()
@@ -40,8 +41,33 @@ class BackupRepository(
                     .put("dynamicColors", settings.dynamicColors)
                     .put("iconShape", settings.iconShape.name)
                     .put("gridRows", settings.gridRows)
-                    .put("edition", settings.edition.name),
+                    .put("edition", settings.edition.name)
+                    .put("tvCardSize", settings.tvCardSize.name)
+                    .put("tvCardCorner", settings.tvCardCorner)
+                    .put("tvCardOpacity", settings.tvCardOpacity.toDouble())
+                    .put("tvFocusEffect", settings.tvFocusEffect.name)
+                    .put("tvHideRowsAboveFocus", settings.tvHideRowsAboveFocus)
+                    .put("tvChannelsEnabled", settings.tvChannelsEnabled)
+                    .put("tvWallpaperKind", settings.tvWallpaperKind.name)
+                    .put("tvWallpaperUri", settings.tvWallpaperUri)
+                    .put("tvWallpaperBrightness", settings.tvWallpaperBrightness.toDouble())
+                    .put("tvWallpaperBlur", settings.tvWallpaperBlur)
+                    .put("tvWallpaperDim", settings.tvWallpaperDim.toDouble())
+                    .put("tvAutostartKey", settings.tvAutostartKey)
+                    .put("tvIdleAction", settings.tvIdleAction.name)
+                    .put("tvIdleMinutes", settings.tvIdleMinutes)
+                    .put("tvParentalEnabled", settings.tvParentalEnabled)
+                    .put("tvParentalPinHash", settings.tvParentalPinHash)
+                    .put("tvParentalSchedule", settings.tvParentalSchedule)
+                    .put("tvParentalStartMin", settings.tvParentalStartMin)
+                    .put("tvParentalEndMin", settings.tvParentalEndMin)
+                    .put("tvBlockedPackages", settings.tvBlockedPackages)
+                    .put("tvBlockedInputs", settings.tvBlockedInputs),
             )
+            .put("tvRows", run {
+                val encoded = tvLayoutStore.encode(tvLayoutStore.snapshot())
+                if (encoded.isBlank()) JSONArray() else JSONArray(encoded)
+            })
             .put("home", JSONArray(favorites.home))
             .put("dock", JSONArray(favorites.dock))
             .put("hidden", JSONArray(favorites.hidden.toList()))
@@ -106,12 +132,36 @@ class BackupRepository(
                     iconShape = enumOr(settingsJson.optString("iconShape"), current.iconShape),
                     gridRows = settingsJson.optInt("gridRows", current.gridRows),
                     edition = enumOr(settingsJson.optString("edition"), current.edition),
+                    tvCardSize = enumOr(settingsJson.optString("tvCardSize"), current.tvCardSize),
+                    tvCardCorner = settingsJson.optInt("tvCardCorner", current.tvCardCorner),
+                    tvCardOpacity = settingsJson.optDouble("tvCardOpacity", current.tvCardOpacity.toDouble()).toFloat(),
+                    tvFocusEffect = enumOr(settingsJson.optString("tvFocusEffect"), current.tvFocusEffect),
+                    tvHideRowsAboveFocus = settingsJson.optBoolean("tvHideRowsAboveFocus", current.tvHideRowsAboveFocus),
+                    tvChannelsEnabled = settingsJson.optBoolean("tvChannelsEnabled", current.tvChannelsEnabled),
+                    tvWallpaperKind = enumOr(settingsJson.optString("tvWallpaperKind"), current.tvWallpaperKind),
+                    tvWallpaperUri = settingsJson.optString("tvWallpaperUri", current.tvWallpaperUri),
+                    tvWallpaperBrightness = settingsJson.optDouble("tvWallpaperBrightness", current.tvWallpaperBrightness.toDouble()).toFloat(),
+                    tvWallpaperBlur = settingsJson.optInt("tvWallpaperBlur", current.tvWallpaperBlur),
+                    tvWallpaperDim = settingsJson.optDouble("tvWallpaperDim", current.tvWallpaperDim.toDouble()).toFloat(),
+                    tvAutostartKey = settingsJson.optString("tvAutostartKey", current.tvAutostartKey),
+                    tvIdleAction = enumOr(settingsJson.optString("tvIdleAction"), current.tvIdleAction),
+                    tvIdleMinutes = settingsJson.optInt("tvIdleMinutes", current.tvIdleMinutes),
+                    tvParentalEnabled = settingsJson.optBoolean("tvParentalEnabled", current.tvParentalEnabled),
+                    tvParentalPinHash = settingsJson.optString("tvParentalPinHash", current.tvParentalPinHash),
+                    tvParentalSchedule = settingsJson.optBoolean("tvParentalSchedule", current.tvParentalSchedule),
+                    tvParentalStartMin = settingsJson.optInt("tvParentalStartMin", current.tvParentalStartMin),
+                    tvParentalEndMin = settingsJson.optInt("tvParentalEndMin", current.tvParentalEndMin),
+                    tvBlockedPackages = settingsJson.optString("tvBlockedPackages", current.tvBlockedPackages),
+                    tvBlockedInputs = settingsJson.optString("tvBlockedInputs", current.tvBlockedInputs),
                 ).let { restored ->
                     if (restored.edition != com.makay.launcher.domain.AppEdition.UNSET) {
                         restored.forEdition(restored.edition)
                     } else restored
                 },
             )
+        }
+        json.optJSONArray("tvRows")?.let { array ->
+            tvLayoutStore.replace(tvLayoutStore.parse(array.toString()))
         }
         widgetController.snapshotPinned().forEach { widgetController.remove(it) }
         val rebound = mutableMapOf<String, Int>()

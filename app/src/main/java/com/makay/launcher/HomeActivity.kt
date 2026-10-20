@@ -101,6 +101,8 @@ class HomeActivity : FragmentActivity() {
         viewModel.refreshGlance()
         viewModel.pruneStaleItems()
         viewModel.checkForUpdate()
+        viewModel.bumpIdle()
+        viewModel.consumeBootAutostart()
         val profile = viewModel.state.value.profile
         viewModel.setGestureNavigation(profile.gestures && isGestureNavigation())
         if (profile.widgets) {

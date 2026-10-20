@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -14,6 +15,10 @@ import com.makay.launcher.domain.GestureAction
 import com.makay.launcher.domain.HomeStyle
 import com.makay.launcher.domain.IconShape
 import com.makay.launcher.domain.LauncherSettings
+import com.makay.launcher.domain.TvCardSize
+import com.makay.launcher.domain.TvFocusEffect
+import com.makay.launcher.domain.TvIdleAction
+import com.makay.launcher.domain.TvWallpaperKind
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -42,6 +47,28 @@ class SettingsStore(private val context: Context) {
     private val updateUrl = stringPreferencesKey("update_url")
     private val postponeCode = intPreferencesKey("postpone_code")
     private val postponeUntil = longPreferencesKey("postpone_until")
+
+    private val tvCardSize = stringPreferencesKey("tv_card_size")
+    private val tvCardCorner = intPreferencesKey("tv_card_corner")
+    private val tvCardOpacity = floatPreferencesKey("tv_card_opacity")
+    private val tvFocusEffect = stringPreferencesKey("tv_focus_effect")
+    private val tvHideAbove = booleanPreferencesKey("tv_hide_above")
+    private val tvChannels = booleanPreferencesKey("tv_channels")
+    private val tvWpKind = stringPreferencesKey("tv_wp_kind")
+    private val tvWpUri = stringPreferencesKey("tv_wp_uri")
+    private val tvWpBright = floatPreferencesKey("tv_wp_bright")
+    private val tvWpBlur = intPreferencesKey("tv_wp_blur")
+    private val tvWpDim = floatPreferencesKey("tv_wp_dim")
+    private val tvAutostart = stringPreferencesKey("tv_autostart")
+    private val tvIdleAction = stringPreferencesKey("tv_idle_action")
+    private val tvIdleMin = intPreferencesKey("tv_idle_min")
+    private val tvParental = booleanPreferencesKey("tv_parental")
+    private val tvPin = stringPreferencesKey("tv_pin_hash")
+    private val tvSchedule = booleanPreferencesKey("tv_schedule")
+    private val tvStart = intPreferencesKey("tv_start_min")
+    private val tvEnd = intPreferencesKey("tv_end_min")
+    private val tvBlockedPkg = stringPreferencesKey("tv_blocked_pkg")
+    private val tvBlockedIn = stringPreferencesKey("tv_blocked_in")
 
     val settings: Flow<LauncherSettings> = context.settingsDataStore.data.map(::read)
 
@@ -73,6 +100,27 @@ class SettingsStore(private val context: Context) {
         updateUrl = prefs[updateUrl].orEmpty(),
         postponedVersionCode = prefs[postponeCode] ?: 0,
         postponedUntil = prefs[postponeUntil] ?: 0L,
+        tvCardSize = enumValue(prefs[tvCardSize], TvCardSize.MEDIUM),
+        tvCardCorner = prefs[tvCardCorner] ?: 18,
+        tvCardOpacity = prefs[tvCardOpacity] ?: 0.85f,
+        tvFocusEffect = enumValue(prefs[tvFocusEffect], TvFocusEffect.SCALE),
+        tvHideRowsAboveFocus = prefs[tvHideAbove] ?: false,
+        tvChannelsEnabled = prefs[tvChannels] ?: true,
+        tvWallpaperKind = enumValue(prefs[tvWpKind], TvWallpaperKind.NONE),
+        tvWallpaperUri = prefs[tvWpUri].orEmpty(),
+        tvWallpaperBrightness = prefs[tvWpBright] ?: 1f,
+        tvWallpaperBlur = prefs[tvWpBlur] ?: 0,
+        tvWallpaperDim = prefs[tvWpDim] ?: 0.35f,
+        tvAutostartKey = prefs[tvAutostart].orEmpty(),
+        tvIdleAction = enumValue(prefs[tvIdleAction], TvIdleAction.NONE),
+        tvIdleMinutes = prefs[tvIdleMin] ?: 5,
+        tvParentalEnabled = prefs[tvParental] ?: false,
+        tvParentalPinHash = prefs[tvPin].orEmpty(),
+        tvParentalSchedule = prefs[tvSchedule] ?: false,
+        tvParentalStartMin = prefs[tvStart] ?: (21 * 60),
+        tvParentalEndMin = prefs[tvEnd] ?: (7 * 60),
+        tvBlockedPackages = prefs[tvBlockedPkg].orEmpty(),
+        tvBlockedInputs = prefs[tvBlockedIn].orEmpty(),
     )
 
     private fun write(prefs: MutablePreferences, next: LauncherSettings) {
@@ -97,6 +145,27 @@ class SettingsStore(private val context: Context) {
         prefs[updateUrl] = next.updateUrl
         prefs[postponeCode] = next.postponedVersionCode
         prefs[postponeUntil] = next.postponedUntil
+        prefs[tvCardSize] = next.tvCardSize.name
+        prefs[tvCardCorner] = next.tvCardCorner
+        prefs[tvCardOpacity] = next.tvCardOpacity
+        prefs[tvFocusEffect] = next.tvFocusEffect.name
+        prefs[tvHideAbove] = next.tvHideRowsAboveFocus
+        prefs[tvChannels] = next.tvChannelsEnabled
+        prefs[tvWpKind] = next.tvWallpaperKind.name
+        prefs[tvWpUri] = next.tvWallpaperUri
+        prefs[tvWpBright] = next.tvWallpaperBrightness
+        prefs[tvWpBlur] = next.tvWallpaperBlur
+        prefs[tvWpDim] = next.tvWallpaperDim
+        prefs[tvAutostart] = next.tvAutostartKey
+        prefs[tvIdleAction] = next.tvIdleAction.name
+        prefs[tvIdleMin] = next.tvIdleMinutes
+        prefs[tvParental] = next.tvParentalEnabled
+        prefs[tvPin] = next.tvParentalPinHash
+        prefs[tvSchedule] = next.tvParentalSchedule
+        prefs[tvStart] = next.tvParentalStartMin
+        prefs[tvEnd] = next.tvParentalEndMin
+        prefs[tvBlockedPkg] = next.tvBlockedPackages
+        prefs[tvBlockedIn] = next.tvBlockedInputs
     }
 
     suspend fun snapshot(): LauncherSettings = settings.first()

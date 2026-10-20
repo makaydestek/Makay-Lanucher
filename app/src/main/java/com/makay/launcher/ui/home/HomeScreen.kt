@@ -174,6 +174,10 @@ fun HomeScreen(
             Overlay.Folder -> if (state.profile.folders) FolderOverlay(state, viewModel)
             Overlay.Onboarding -> OnboardingOverlay(state, viewModel)
             Overlay.Update -> UpdateOverlay(state, viewModel)
+            Overlay.Idle -> if (state.profile.isTv) TvIdleOverlay(viewModel)
+            Overlay.Calibration -> if (state.profile.isTv) CalibrationOverlay(state, viewModel)
+            Overlay.ParentalPin -> ParentalPinOverlay(state, viewModel)
+            Overlay.TvRows -> if (state.profile.isTv) TvRowsEditor(state, viewModel)
         }
 
         state.shutterApp?.let { ShutterSheet(it, state, viewModel) }
