@@ -69,6 +69,8 @@
     <string name="about_developer_title">Developer</string>
     <string name="about_developer_body">The design and development of this application were made by Murat AKAY.</string>
     <string name="about_copyright">© 2026 All rights reserved. Prepared for sideload / local distribution.</string>
+    <string name="accessibility_service_desc">Optional assist for blocked apps and guest lock. No data is collected.</string>
+    <string name="notification_listener_media">Makay media progress</string>
     <string name="weather_clear">Clear</string>
     <string name="weather_partly_cloudy">Partly cloudy</string>
     <string name="weather_fog">Fog</string>

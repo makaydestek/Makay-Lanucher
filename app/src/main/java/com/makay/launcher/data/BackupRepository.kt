@@ -15,13 +15,37 @@ class BackupRepository(
     private val widgetController: WidgetController,
     private val workspaceStore: WorkspaceStore,
     private val tvLayoutStore: TvLayoutStore,
+    private val tvOverridesStore: TvAppOverridesStore? = null,
 ) {
+    suspend fun exportJson(): String {
+        val settings = settingsStore.snapshot()
+        val favorites = favoritesStore.snapshot()
+        val widgets = widgetController.snapshotPinned()
+        val json = buildBackupJson(settings, favorites, widgets)
+        return json.toString(2)
+    }
+
     suspend fun exportTo(uri: Uri) {
         val settings = settingsStore.snapshot()
         val favorites = favoritesStore.snapshot()
         val widgets = widgetController.snapshotPinned()
+        val json = buildBackupJson(settings, favorites, widgets)
+        context.contentResolver.openOutputStream(uri)?.use { stream ->
+            stream.write(json.toString(2).toByteArray(Charsets.UTF_8))
+        } ?: error("Yedek yazılamadı")
+    }
+
+    suspend fun importJson(raw: String) {
+        applyBackup(JSONObject(raw))
+    }
+
+    private suspend fun buildBackupJson(
+        settings: com.makay.launcher.domain.LauncherSettings,
+        favorites: FavoriteSnapshot,
+        widgets: List<com.makay.launcher.domain.PinnedWidget>,
+    ): JSONObject {
         val json = JSONObject()
-            .put("version", 3)
+            .put("version", 4)
             .put(
                 "settings",
                 JSONObject()
@@ -62,10 +86,32 @@ class BackupRepository(
                     .put("tvParentalStartMin", settings.tvParentalStartMin)
                     .put("tvParentalEndMin", settings.tvParentalEndMin)
                     .put("tvBlockedPackages", settings.tvBlockedPackages)
-                    .put("tvBlockedInputs", settings.tvBlockedInputs),
+                    .put("tvBlockedInputs", settings.tvBlockedInputs)
+                    .put("tvCardSpacing", settings.tvCardSpacing)
+                    .put("tvCardIconMode", settings.tvCardIconMode.name)
+                    .put("tvRememberFocus", settings.tvRememberFocus)
+                    .put("tvBurnInFade", settings.tvBurnInFade)
+                    .put("tvShowClock", settings.tvShowClock)
+                    .put("tvHideSettingsChip", settings.tvHideSettingsChip)
+                    .put("tvVideoPreviewOnFocus", settings.tvVideoPreviewOnFocus)
+                    .put("tvWatchProgressBar", settings.tvWatchProgressBar)
+                    .put("tvVideoZoom", settings.tvVideoZoom.toDouble())
+                    .put("tvWallpaperContrast", settings.tvWallpaperContrast.toDouble())
+                    .put("tvWallpaperSaturation", settings.tvWallpaperSaturation.toDouble())
+                    .put("tvWallpaperHue", settings.tvWallpaperHue.toDouble())
+                    .put("tvBootToScreensaver", settings.tvBootToScreensaver)
+                    .put("tvFamilySlots", settings.tvFamilySlots)
+                    .put("tvGuestLock", settings.tvGuestLock)
+                    .put("tvAccessibilityAssist", settings.tvAccessibilityAssist)
+                    .put("tvLocaleTag", settings.tvLocaleTag)
+                    .put("tvAutoBackup", settings.tvAutoBackup),
             )
             .put("tvRows", run {
                 val encoded = tvLayoutStore.encode(tvLayoutStore.snapshot())
+                if (encoded.isBlank()) JSONArray() else JSONArray(encoded)
+            })
+            .put("tvOverrides", run {
+                val encoded = tvOverridesStore?.encode(tvOverridesStore.snapshot()).orEmpty()
                 if (encoded.isBlank()) JSONArray() else JSONArray(encoded)
             })
             .put("home", JSONArray(favorites.home))
@@ -101,15 +147,16 @@ class BackupRepository(
                     .put("color", item.color)
                     .put("shortcutId", item.shortcutId)
         }))
-        context.contentResolver.openOutputStream(uri)?.use { stream ->
-            stream.write(json.toString(2).toByteArray(Charsets.UTF_8))
-        } ?: error("Yedek yazılamadı")
+        return json
     }
 
     suspend fun importFrom(uri: Uri) {
         val raw = context.contentResolver.openInputStream(uri)?.use { it.readBytes().toString(Charsets.UTF_8) }
             ?: error("Yedek okunamadı")
-        val json = JSONObject(raw)
+        applyBackup(JSONObject(raw))
+    }
+
+    private suspend fun applyBackup(json: JSONObject) {
         val settingsJson = json.optJSONObject("settings")
         if (settingsJson != null) {
             val current = settingsStore.snapshot()
@@ -153,6 +200,24 @@ class BackupRepository(
                     tvParentalEndMin = settingsJson.optInt("tvParentalEndMin", current.tvParentalEndMin),
                     tvBlockedPackages = settingsJson.optString("tvBlockedPackages", current.tvBlockedPackages),
                     tvBlockedInputs = settingsJson.optString("tvBlockedInputs", current.tvBlockedInputs),
+                    tvCardSpacing = settingsJson.optInt("tvCardSpacing", current.tvCardSpacing),
+                    tvCardIconMode = enumOr(settingsJson.optString("tvCardIconMode"), current.tvCardIconMode),
+                    tvRememberFocus = settingsJson.optBoolean("tvRememberFocus", current.tvRememberFocus),
+                    tvBurnInFade = settingsJson.optBoolean("tvBurnInFade", current.tvBurnInFade),
+                    tvShowClock = settingsJson.optBoolean("tvShowClock", current.tvShowClock),
+                    tvHideSettingsChip = settingsJson.optBoolean("tvHideSettingsChip", current.tvHideSettingsChip),
+                    tvVideoPreviewOnFocus = settingsJson.optBoolean("tvVideoPreviewOnFocus", current.tvVideoPreviewOnFocus),
+                    tvWatchProgressBar = settingsJson.optBoolean("tvWatchProgressBar", current.tvWatchProgressBar),
+                    tvVideoZoom = settingsJson.optDouble("tvVideoZoom", current.tvVideoZoom.toDouble()).toFloat(),
+                    tvWallpaperContrast = settingsJson.optDouble("tvWallpaperContrast", current.tvWallpaperContrast.toDouble()).toFloat(),
+                    tvWallpaperSaturation = settingsJson.optDouble("tvWallpaperSaturation", current.tvWallpaperSaturation.toDouble()).toFloat(),
+                    tvWallpaperHue = settingsJson.optDouble("tvWallpaperHue", current.tvWallpaperHue.toDouble()).toFloat(),
+                    tvBootToScreensaver = settingsJson.optBoolean("tvBootToScreensaver", current.tvBootToScreensaver),
+                    tvFamilySlots = settingsJson.optString("tvFamilySlots", current.tvFamilySlots),
+                    tvGuestLock = settingsJson.optBoolean("tvGuestLock", current.tvGuestLock),
+                    tvAccessibilityAssist = settingsJson.optBoolean("tvAccessibilityAssist", current.tvAccessibilityAssist),
+                    tvLocaleTag = settingsJson.optString("tvLocaleTag", current.tvLocaleTag),
+                    tvAutoBackup = settingsJson.optBoolean("tvAutoBackup", current.tvAutoBackup),
                 ).let { restored ->
                     if (restored.edition != com.makay.launcher.domain.AppEdition.UNSET) {
                         restored.forEdition(restored.edition)
@@ -162,6 +227,11 @@ class BackupRepository(
         }
         json.optJSONArray("tvRows")?.let { array ->
             tvLayoutStore.replace(tvLayoutStore.parse(array.toString()))
+        }
+        json.optJSONArray("tvOverrides")?.let { array ->
+            tvOverridesStore?.let { store ->
+                store.parse(array.toString()).values.forEach { store.upsert(it) }
+            }
         }
         widgetController.snapshotPinned().forEach { widgetController.remove(it) }
         val rebound = mutableMapOf<String, Int>()

@@ -14,21 +14,31 @@ object EngineeringMenus {
         "Mediatek" to listOf(
             Intent().setClassName("com.mediatek.tv.setting", "com.mediatek.tv.setting.MainActivity"),
             Intent().setClassName("com.mediatek.wwtv.tvcenter", "com.mediatek.wwtv.tvcenter.nav.TurnkeyUiMainActivity"),
+            Intent().setClassName("com.mediatek.lbs.em2.ui", "com.mediatek.lbs.em2.ui.MainActivity"),
         ),
         "AmLogic" to listOf(
             Intent().setClassName("com.droidlogic.tv.settings", "com.droidlogic.tv.settings.TvSettingsActivity"),
+            Intent().setClassName("com.droidlogic.miracast", "com.droidlogic.miracast.WiFiDisplayActivity"),
             Intent().setClassName("com.droidlogic.app.SystemControlManager", "com.droidlogic.app.SystemControlManager"),
         ),
         "Xiaomi / PatchWall" to listOf(
             Intent().setClassName("com.xiaomi.mitv.settings", "com.xiaomi.mitv.settings.MainActivity"),
             Intent().setClassName("com.mitv.tvhome", "com.mitv.tvhome.MainActivity"),
+            Intent().setClassName("com.xiaomi.android.tvsetup.misc", "com.xiaomi.android.tvsetup.misc.MainActivity"),
         ),
         "FengOS" to listOf(
             Intent().setClassName("com.fengos.settings", "com.fengos.settings.MainActivity"),
         ),
+        "Realtek" to listOf(
+            Intent().setClassName("com.rtk.tv", "com.rtk.tv.TVMainActivity"),
+        ),
+        "Hisense" to listOf(
+            Intent().setClassName("com.jamdeo.tv.settings", "com.jamdeo.tv.settings.MainSettings"),
+        ),
         "Android TV Ayarları" to listOf(
             Intent("android.settings.SETTINGS"),
             Intent("android.settings.DEVICE_INFO_SETTINGS"),
+            Intent("android.settings.DISPLAY_SETTINGS"),
             Intent("com.android.tv.settings.MAIN"),
         ),
     )

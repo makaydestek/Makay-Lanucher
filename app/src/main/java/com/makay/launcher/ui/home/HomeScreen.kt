@@ -178,6 +178,11 @@ fun HomeScreen(
             Overlay.Calibration -> if (state.profile.isTv) CalibrationOverlay(state, viewModel)
             Overlay.ParentalPin -> ParentalPinOverlay(state, viewModel)
             Overlay.TvRows -> if (state.profile.isTv) TvRowsEditor(state, viewModel)
+            Overlay.AllApps -> if (state.profile.isTv) AllAppsPanel(state, viewModel)
+            Overlay.ProgramDetail -> if (state.profile.isTv) ProgramDetailPanel(state, viewModel)
+            Overlay.Sideload -> if (state.profile.isTv) SideloadOverlay(state, viewModel)
+            Overlay.TvAppEdit -> if (state.profile.isTv) TvAppEditOverlay(state, viewModel)
+            Overlay.AutoBackups -> if (state.profile.isTv) AutoBackupsOverlay(state, viewModel)
         }
 
         state.shutterApp?.let { ShutterSheet(it, state, viewModel) }

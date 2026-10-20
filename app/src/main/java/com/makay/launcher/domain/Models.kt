@@ -31,6 +31,11 @@ enum class Overlay {
     Calibration,
     ParentalPin,
     TvRows,
+    AllApps,
+    ProgramDetail,
+    Sideload,
+    TvAppEdit,
+    AutoBackups,
 }
 
 enum class GestureAction {
@@ -126,17 +131,30 @@ data class LauncherSettings(
     val tvFocusEffect: TvFocusEffect = TvFocusEffect.SCALE,
     val tvHideRowsAboveFocus: Boolean = false,
     val tvChannelsEnabled: Boolean = true,
+    val tvCardSpacing: Int = 14,
+    val tvCardIconMode: TvCardIconMode = TvCardIconMode.ICON,
+    val tvRememberFocus: Boolean = true,
+    val tvBurnInFade: Boolean = true,
+    val tvShowClock: Boolean = true,
+    val tvHideSettingsChip: Boolean = false,
+    val tvVideoPreviewOnFocus: Boolean = true,
+    val tvWatchProgressBar: Boolean = true,
+    val tvVideoZoom: Float = 1f,
     // TV — wallpaper
     val tvWallpaperKind: TvWallpaperKind = TvWallpaperKind.NONE,
     val tvWallpaperUri: String = "",
     val tvWallpaperBrightness: Float = 1f,
     val tvWallpaperBlur: Int = 0,
     val tvWallpaperDim: Float = 0.35f,
+    val tvWallpaperContrast: Float = 1f,
+    val tvWallpaperSaturation: Float = 1f,
+    val tvWallpaperHue: Float = 0f,
     // TV — boot / idle
     val tvAutostartKey: String = "",
     val tvIdleAction: TvIdleAction = TvIdleAction.NONE,
     val tvIdleMinutes: Int = 5,
-    // TV — ebeveyn
+    val tvBootToScreensaver: Boolean = false,
+    // TV — ebeveyn / misafir
     val tvParentalEnabled: Boolean = false,
     val tvParentalPinHash: String = "",
     val tvParentalSchedule: Boolean = false,
@@ -144,6 +162,13 @@ data class LauncherSettings(
     val tvParentalEndMin: Int = 7 * 60,
     val tvBlockedPackages: String = "",
     val tvBlockedInputs: String = "",
+    val tvFamilySlots: String = "",
+    val tvGuestLock: Boolean = false,
+    val tvAccessibilityAssist: Boolean = false,
+    // TV — dil / yedek / diğer
+    val tvLocaleTag: String = "",
+    val tvAutoBackup: Boolean = true,
+    val tvDisplayProfileJson: String = "",
 )
 
 enum class IconShape {
@@ -255,6 +280,15 @@ data class HomeUiState(
     val pendingParentalInput: InputSource? = null,
     val calibrationPattern: TvCalibrationPattern = TvCalibrationPattern.COLOR_BARS,
     val engineeringMenus: List<String> = emptyList(),
+    val tvOverrides: Map<String, TvAppOverride> = emptyMap(),
+    val tvWatchProgress: Map<String, Float> = emptyMap(),
+    val nowPlaying: NowPlayingInfo = NowPlayingInfo(),
+    val programDetail: ProgramDetail? = null,
+    val tvFocusedAppKey: String? = null,
+    val tvIdleFaded: Boolean = false,
+    val editingTvApp: AppInfo? = null,
+    val sideloadUrl: String = "",
+    val autoBackupFiles: List<String> = emptyList(),
 )
 
 data class UpdateOffer(

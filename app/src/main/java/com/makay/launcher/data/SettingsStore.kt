@@ -15,6 +15,7 @@ import com.makay.launcher.domain.GestureAction
 import com.makay.launcher.domain.HomeStyle
 import com.makay.launcher.domain.IconShape
 import com.makay.launcher.domain.LauncherSettings
+import com.makay.launcher.domain.TvCardIconMode
 import com.makay.launcher.domain.TvCardSize
 import com.makay.launcher.domain.TvFocusEffect
 import com.makay.launcher.domain.TvIdleAction
@@ -69,6 +70,25 @@ class SettingsStore(private val context: Context) {
     private val tvEnd = intPreferencesKey("tv_end_min")
     private val tvBlockedPkg = stringPreferencesKey("tv_blocked_pkg")
     private val tvBlockedIn = stringPreferencesKey("tv_blocked_in")
+    private val tvCardSpacing = intPreferencesKey("tv_card_spacing")
+    private val tvCardIconMode = stringPreferencesKey("tv_card_icon_mode")
+    private val tvRememberFocus = booleanPreferencesKey("tv_remember_focus")
+    private val tvBurnIn = booleanPreferencesKey("tv_burn_in")
+    private val tvShowClock = booleanPreferencesKey("tv_show_clock")
+    private val tvHideSettings = booleanPreferencesKey("tv_hide_settings")
+    private val tvVideoPreview = booleanPreferencesKey("tv_video_preview")
+    private val tvWatchBar = booleanPreferencesKey("tv_watch_bar")
+    private val tvVideoZoom = floatPreferencesKey("tv_video_zoom")
+    private val tvWpContrast = floatPreferencesKey("tv_wp_contrast")
+    private val tvWpSat = floatPreferencesKey("tv_wp_sat")
+    private val tvWpHue = floatPreferencesKey("tv_wp_hue")
+    private val tvBootDream = booleanPreferencesKey("tv_boot_dream")
+    private val tvFamily = stringPreferencesKey("tv_family_slots")
+    private val tvGuest = booleanPreferencesKey("tv_guest_lock")
+    private val tvA11y = booleanPreferencesKey("tv_a11y")
+    private val tvLocale = stringPreferencesKey("tv_locale")
+    private val tvAutoBackup = booleanPreferencesKey("tv_auto_backup")
+    private val tvDisplayProfile = stringPreferencesKey("tv_display_profile")
 
     val settings: Flow<LauncherSettings> = context.settingsDataStore.data.map(::read)
 
@@ -121,6 +141,25 @@ class SettingsStore(private val context: Context) {
         tvParentalEndMin = prefs[tvEnd] ?: (7 * 60),
         tvBlockedPackages = prefs[tvBlockedPkg].orEmpty(),
         tvBlockedInputs = prefs[tvBlockedIn].orEmpty(),
+        tvCardSpacing = prefs[tvCardSpacing] ?: 14,
+        tvCardIconMode = enumValue(prefs[tvCardIconMode], TvCardIconMode.ICON),
+        tvRememberFocus = prefs[tvRememberFocus] ?: true,
+        tvBurnInFade = prefs[tvBurnIn] ?: true,
+        tvShowClock = prefs[tvShowClock] ?: true,
+        tvHideSettingsChip = prefs[tvHideSettings] ?: false,
+        tvVideoPreviewOnFocus = prefs[tvVideoPreview] ?: true,
+        tvWatchProgressBar = prefs[tvWatchBar] ?: true,
+        tvVideoZoom = prefs[tvVideoZoom] ?: 1f,
+        tvWallpaperContrast = prefs[tvWpContrast] ?: 1f,
+        tvWallpaperSaturation = prefs[tvWpSat] ?: 1f,
+        tvWallpaperHue = prefs[tvWpHue] ?: 0f,
+        tvBootToScreensaver = prefs[tvBootDream] ?: false,
+        tvFamilySlots = prefs[tvFamily].orEmpty(),
+        tvGuestLock = prefs[tvGuest] ?: false,
+        tvAccessibilityAssist = prefs[tvA11y] ?: false,
+        tvLocaleTag = prefs[tvLocale].orEmpty(),
+        tvAutoBackup = prefs[tvAutoBackup] ?: true,
+        tvDisplayProfileJson = prefs[tvDisplayProfile].orEmpty(),
     )
 
     private fun write(prefs: MutablePreferences, next: LauncherSettings) {
@@ -166,6 +205,25 @@ class SettingsStore(private val context: Context) {
         prefs[tvEnd] = next.tvParentalEndMin
         prefs[tvBlockedPkg] = next.tvBlockedPackages
         prefs[tvBlockedIn] = next.tvBlockedInputs
+        prefs[tvCardSpacing] = next.tvCardSpacing
+        prefs[tvCardIconMode] = next.tvCardIconMode.name
+        prefs[tvRememberFocus] = next.tvRememberFocus
+        prefs[tvBurnIn] = next.tvBurnInFade
+        prefs[tvShowClock] = next.tvShowClock
+        prefs[tvHideSettings] = next.tvHideSettingsChip
+        prefs[tvVideoPreview] = next.tvVideoPreviewOnFocus
+        prefs[tvWatchBar] = next.tvWatchProgressBar
+        prefs[tvVideoZoom] = next.tvVideoZoom
+        prefs[tvWpContrast] = next.tvWallpaperContrast
+        prefs[tvWpSat] = next.tvWallpaperSaturation
+        prefs[tvWpHue] = next.tvWallpaperHue
+        prefs[tvBootDream] = next.tvBootToScreensaver
+        prefs[tvFamily] = next.tvFamilySlots
+        prefs[tvGuest] = next.tvGuestLock
+        prefs[tvA11y] = next.tvAccessibilityAssist
+        prefs[tvLocale] = next.tvLocaleTag
+        prefs[tvAutoBackup] = next.tvAutoBackup
+        prefs[tvDisplayProfile] = next.tvDisplayProfileJson
     }
 
     suspend fun snapshot(): LauncherSettings = settings.first()

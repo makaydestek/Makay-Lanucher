@@ -3,17 +3,18 @@ package com.makay.launcher.data
 import com.makay.launcher.domain.AppCategory
 import com.makay.launcher.domain.AppInfo
 import com.makay.launcher.domain.HomeUiState
-import com.makay.launcher.domain.InputSource
 import com.makay.launcher.domain.TvBuiltinRow
 import com.makay.launcher.domain.TvResolvedRow
 import com.makay.launcher.domain.TvRowDef
 import com.makay.launcher.domain.TvRowSort
+import com.makay.launcher.domain.WatchNextItem
 import java.util.UUID
 import kotlin.random.Random
 
 object TvRowEngine {
     fun defaultLayout(): List<TvRowDef> = listOf(
         TvRowDef(id = "actions", builtin = TvBuiltinRow.ACTIONS, isDefault = true),
+        TvRowDef(id = "now", builtin = TvBuiltinRow.NOW_PLAYING),
         TvRowDef(id = "letters", builtin = TvBuiltinRow.LETTERS),
         TvRowDef(id = "work", builtin = TvBuiltinRow.WORK),
         TvRowDef(id = "private", builtin = TvBuiltinRow.PRIVATE),
@@ -37,6 +38,7 @@ object TvRowEngine {
         state: HomeUiState,
         lastUsed: Map<String, Long> = emptyMap(),
         hideAboveFocusedId: String? = null,
+        watchByPackage: Map<String, WatchProgress> = emptyMap(),
     ): List<TvResolvedRow> {
         val rows = layout.ifEmpty { defaultLayout() }
         val focusedIndex = hideAboveFocusedId?.let { id -> rows.indexOfFirst { it.id == id } } ?: -1
@@ -46,14 +48,39 @@ object TvRowEngine {
             if (state.settings.digitalDetox && def.builtin == TvBuiltinRow.FREQUENT) {
                 return@mapIndexedNotNull null
             }
-            buildRow(def, state, lastUsed)
+            buildRow(def, state, lastUsed, watchByPackage)
         }
     }
 
-    fun buildRow(def: TvRowDef, state: HomeUiState, lastUsed: Map<String, Long>): TvResolvedRow? {
+    fun buildRow(
+        def: TvRowDef,
+        state: HomeUiState,
+        lastUsed: Map<String, Long>,
+        watchByPackage: Map<String, WatchProgress> = emptyMap(),
+    ): TvResolvedRow? {
         return when (def.builtin) {
             TvBuiltinRow.ACTIONS -> TvResolvedRow(def = def, isActions = true)
             TvBuiltinRow.LETTERS -> TvResolvedRow(def = def, isLetters = true)
+            TvBuiltinRow.NOW_PLAYING -> {
+                val np = state.nowPlaying
+                if (np.packageName.isBlank()) null
+                else {
+                    val app = state.apps.find { it.packageName == np.packageName } ?: return null
+                    TvResolvedRow(
+                        def = def,
+                        isNowPlaying = true,
+                        watchItems = listOf(
+                            WatchNextItem(
+                                app = app,
+                                subtitle = listOf(np.title, np.artist).filter { it.isNotBlank() }.joinToString(" · "),
+                                progress = np.progress,
+                                previewUri = np.artUri,
+                                detail = np.artist,
+                            ),
+                        ),
+                    )
+                }
+            }
             TvBuiltinRow.WORK -> appsOrNull(def, state.apps.filter { it.work }, lastUsed)
             TvBuiltinRow.PRIVATE -> appsOrNull(def, state.apps.filter { it.privateSpace }, lastUsed)
             TvBuiltinRow.INPUTS -> {
@@ -76,12 +103,25 @@ object TvRowEngine {
                 state.apps.filter { it.category == AppCategory.Media || it.category == AppCategory.Games },
                 lastUsed,
             )
-            TvBuiltinRow.WATCH_NEXT -> appsOrNull(
-                def,
-                state.apps.filter { it.category == AppCategory.Media || it.category == AppCategory.Games }
-                    .sortedByDescending { it.usageCount },
-                lastUsed,
-            )
+            TvBuiltinRow.WATCH_NEXT -> {
+                val mediaApps = state.apps.filter {
+                    it.category == AppCategory.Media || it.category == AppCategory.Games ||
+                        it.packageName in watchByPackage
+                }
+                val items = mediaApps.map { app ->
+                    val w = watchByPackage[app.packageName]
+                    val ov = state.tvOverrides[app.key]
+                    WatchNextItem(
+                        app = app,
+                        subtitle = w?.title?.ifBlank { "İzlemeye devam" } ?: "İzlemeye devam",
+                        progress = w?.progress ?: ((app.usageCount % 10) / 10f).coerceIn(0.15f, 0.9f),
+                        previewUri = ov?.previewUri?.ifBlank { w?.previewUri.orEmpty() } ?: w?.previewUri.orEmpty(),
+                        detail = w?.detail.orEmpty(),
+                    )
+                }.sortedByDescending { it.progress }
+                val limited = if (def.maxItems > 0) items.take(def.maxItems) else items
+                if (limited.isEmpty()) null else TvResolvedRow(def = def, watchItems = limited, apps = limited.map { it.app })
+            }
             TvBuiltinRow.CAT_SOCIAL -> category(def, state, AppCategory.Social, lastUsed)
             TvBuiltinRow.CAT_COMMUNICATION -> category(def, state, AppCategory.Communication, lastUsed)
             TvBuiltinRow.CAT_MEDIA -> category(def, state, AppCategory.Media, lastUsed)
@@ -117,6 +157,12 @@ object TvRowEngine {
         sort = TvRowSort.MANUAL,
         appKeys = appKeys,
     )
+
+    fun addAppToRow(layout: List<TvRowDef>, rowId: String, appKey: String): List<TvRowDef> =
+        layout.map { row ->
+            if (row.id != rowId) row
+            else row.copy(appKeys = (row.appKeys + appKey).distinct(), builtin = null)
+        }
 
     private fun category(
         def: TvRowDef,

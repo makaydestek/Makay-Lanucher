@@ -327,6 +327,17 @@ fun ShutterSheet(app: AppInfo, state: HomeUiState, viewModel: HomeViewModel) {
                         SheetAction("Sola taşı") { viewModel.moveFavorite(app, -1) }
                         SheetAction("Sağa taşı") { viewModel.moveFavorite(app, 1) }
                     }
+                    if (state.profile.isTv) {
+                        SheetAction("Kartı özelleştir") { viewModel.openTvAppEdit(app) }
+                        SheetAction("Program detayı") { viewModel.openProgramDetail(app) }
+                        SheetAction(
+                            if (state.settings.tvBlockedPackages.split(',').map { it.trim() }.contains(app.packageName)) {
+                                "Ebeveyn engelini kaldır"
+                            } else {
+                                "Ebeveyn ile engelle"
+                            },
+                        ) { viewModel.toggleBlockedPackage(app.packageName) }
+                    }
                     if (state.profile.dock) {
                         SheetAction(if (state.dock.any { it.key == app.key }) "Dock’tan kaldır" else "Dock’a ekle") {
                             viewModel.toggleDock(app)

@@ -131,6 +131,8 @@ fun CalibrationOverlay(state: HomeUiState, viewModel: HomeViewModel) {
             TvCalibrationPattern.GRID -> GridPattern()
             TvCalibrationPattern.GRAYSCALE -> GrayscaleBars()
             TvCalibrationPattern.JUDDER -> JudderPattern()
+            TvCalibrationPattern.HDR_CLIP -> HdrClip()
+            TvCalibrationPattern.DOLBY_BARS -> DolbyBars()
         }
         Column(
             modifier = Modifier
@@ -148,6 +150,8 @@ fun CalibrationOverlay(state: HomeUiState, viewModel: HomeViewModel) {
                             TvCalibrationPattern.GRID -> "Izgara"
                             TvCalibrationPattern.GRAYSCALE -> "Gri"
                             TvCalibrationPattern.JUDDER -> "Judder"
+                            TvCalibrationPattern.HDR_CLIP -> "HDR"
+                            TvCalibrationPattern.DOLBY_BARS -> "Dolby"
                         },
                         selected = state.calibrationPattern == pattern,
                     ) { viewModel.setCalibrationPattern(pattern) }
@@ -211,6 +215,27 @@ private fun JudderPattern() {
         while (x < size.width) {
             drawRect(Color.White, topLeft = Offset(x, 0f), size = androidx.compose.ui.geometry.Size(40f, size.height))
             x += 120f
+        }
+    }
+}
+
+@Composable
+private fun HdrClip() {
+    Row(modifier = Modifier.fillMaxSize()) {
+        listOf(0f, 0.05f, 0.1f, 0.5f, 0.9f, 0.95f, 1f).forEach { v ->
+            Box(modifier = Modifier.weight(1f).fillMaxSize().background(Color(v, v, v)))
+        }
+    }
+}
+
+@Composable
+private fun DolbyBars() {
+    Row(modifier = Modifier.fillMaxSize()) {
+        listOf(
+            Color(0xFF000000), Color(0xFF101010), Color(0xFF7F7F7F),
+            Color(0xFFE0E0E0), Color(0xFFFFFFFF), Color(0xFF001F3F), Color(0xFFFF4136),
+        ).forEach { color ->
+            Box(modifier = Modifier.weight(1f).fillMaxSize().background(color))
         }
     }
 }

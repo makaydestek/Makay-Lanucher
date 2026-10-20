@@ -21,9 +21,12 @@ import com.makay.launcher.data.SearchEngine
 import com.makay.launcher.data.SettingsStore
 import com.makay.launcher.data.ShortcutIndex
 import com.makay.launcher.data.AppIconFetcher
+import com.makay.launcher.data.AutoBackupStore
+import com.makay.launcher.data.TvAppOverridesStore
 import com.makay.launcher.data.TvInputStore
 import com.makay.launcher.data.TvLayoutStore
 import com.makay.launcher.data.UsageStore
+import com.makay.launcher.data.WatchNextStore
 import com.makay.launcher.data.WallpaperFetcher
 import com.makay.launcher.data.WallpaperPalette
 import com.makay.launcher.data.WeatherStore
@@ -55,6 +58,12 @@ class MakayApp : Application(), SingletonImageLoader.Factory {
         private set
     lateinit var tvLayoutStore: TvLayoutStore
         private set
+    lateinit var tvOverridesStore: TvAppOverridesStore
+        private set
+    lateinit var watchNextStore: WatchNextStore
+        private set
+    lateinit var autoBackupStore: AutoBackupStore
+        private set
     lateinit var glanceIntel: GlanceIntel
         private set
     lateinit var shortcutIndex: ShortcutIndex
@@ -83,12 +92,15 @@ class MakayApp : Application(), SingletonImageLoader.Factory {
         widgetController = WidgetController(this)
         tvInputStore = TvInputStore(this)
         tvLayoutStore = TvLayoutStore(this)
+        tvOverridesStore = TvAppOverridesStore(this)
+        watchNextStore = WatchNextStore(this)
+        autoBackupStore = AutoBackupStore(this)
         glanceIntel = GlanceIntel(this)
         shortcutIndex = ShortcutIndex(this)
         workspaceStore = WorkspaceStore(this)
         weatherStore = WeatherStore(this)
         backupRepository = BackupRepository(
-            this, settingsStore, favoritesStore, widgetController, workspaceStore, tvLayoutStore,
+            this, settingsStore, favoritesStore, widgetController, workspaceStore, tvLayoutStore, tvOverridesStore,
         )
     }
 

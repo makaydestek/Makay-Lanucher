@@ -15,11 +15,21 @@ import com.makay.launcher.data.LauncherComponents
 import com.makay.launcher.data.BootAutostartReceiver
 import com.makay.launcher.data.EngineeringMenus
 import com.makay.launcher.data.ParentalGate
+import com.makay.launcher.data.SideloadInstaller
+import com.makay.launcher.data.StandbyHelper
 import com.makay.launcher.data.TvChannelPublisher
 import com.makay.launcher.data.TvRowEngine
 import com.makay.launcher.data.UpdateCheckResult
 import com.makay.launcher.data.UpdateChecker
 import com.makay.launcher.data.UpdateManager
+import com.makay.launcher.data.WallpaperProviders
+import com.makay.launcher.domain.NowPlayingInfo
+import com.makay.launcher.domain.ProgramDetail
+import com.makay.launcher.domain.TvAppOverride
+import com.makay.launcher.domain.TvCardIconMode
+import com.makay.launcher.domain.TvFamilySlot
+import com.makay.launcher.domain.TvIdleAction
+import com.makay.launcher.domain.TvWallpaperKind
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -41,10 +51,10 @@ import com.makay.launcher.domain.InputSource
 import com.makay.launcher.domain.LauncherSettings
 import com.makay.launcher.domain.Overlay
 import com.makay.launcher.domain.TvCalibrationPattern
-import com.makay.launcher.domain.TvIdleAction
 import com.makay.launcher.domain.TvRowDef
-import com.makay.launcher.domain.TvWallpaperKind
 import com.makay.launcher.domain.forEdition
+import androidx.appcompat.app.AppCompatDelegate
+import androidx.core.os.LocaleListCompat
 import com.makay.launcher.data.WorkspaceEngine
 import com.makay.launcher.domain.PinnedWidget
 import com.makay.launcher.domain.WidgetOffer
@@ -174,16 +184,30 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         viewModelScope.launch {
+            app.tvOverridesStore.overrides.collect { map ->
+                _state.update { it.copy(tvOverrides = map) }
+                if (_state.value.profile.isTv) recomputeTvRows()
+            }
+        }
+        viewModelScope.launch {
             while (true) {
-                delay(15_000)
-                val settings = _state.value.settings
+                delay(12_000)
                 if (!_state.value.profile.isTv) continue
-                if (settings.tvIdleAction == TvIdleAction.NONE) continue
-                if (_state.value.overlay != Overlay.None) continue
+                refreshNowPlaying()
+                val settings = _state.value.settings
+                if (_state.value.overlay != Overlay.None && _state.value.overlay != Overlay.Idle) continue
                 val idleMs = settings.tvIdleMinutes.coerceIn(1, 120) * 60_000L
-                if (System.currentTimeMillis() - lastIdleBump >= idleMs) {
+                val idleFor = System.currentTimeMillis() - lastIdleBump
+                if (settings.tvBurnInFade && idleFor >= idleMs / 2) {
+                    _state.update { it.copy(tvIdleFaded = true) }
+                }
+                if (settings.tvIdleAction == TvIdleAction.NONE) continue
+                if (idleFor >= idleMs) {
                     when (settings.tvIdleAction) {
                         TvIdleAction.SCREENSAVER, TvIdleAction.DIM -> open(Overlay.Idle)
+                        TvIdleAction.STANDBY -> {
+                            if (!StandbyHelper.requestStandby(getApplication())) open(Overlay.Idle)
+                        }
                         TvIdleAction.NONE -> Unit
                     }
                 }
@@ -357,12 +381,16 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         runCatching { app.appsStore.launch(appInfo) }
         closeOverlays()
         viewModelScope.launch {
+            if (_state.value.profile.isTv) {
+                app.watchNextStore.record(appInfo.packageName, title = appInfo.label)
+            }
             delay(300)
             app.appsStore.reload()
             if (_state.value.profile.isTv) {
                 _state.update { it.copy(tvLastUsed = app.usageStore.lastOpened()) }
                 recomputeTvRows()
             }
+            maybeAutoBackup()
         }
     }
 
@@ -899,11 +927,13 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             }
             return
         }
+        applyDisplayProfile(source.id)
         app.tvInputStore.launch(source)
     }
 
     fun bumpIdle() {
         lastIdleBump = System.currentTimeMillis()
+        _state.update { it.copy(tvIdleFaded = false) }
         if (_state.value.overlay == Overlay.Idle) {
             _state.update { it.copy(overlay = Overlay.None) }
         }
@@ -1050,13 +1080,20 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     fun consumeBootAutostart() {
         if (!BootAutostartReceiver.consumePending(getApplication())) return
         if (!_state.value.profile.isTv) return
+        if (_state.value.settings.tvBootToScreensaver) {
+            open(Overlay.Idle)
+            return
+        }
         val key = _state.value.settings.tvAutostartKey
         if (key.isBlank()) return
         viewModelScope.launch {
             delay(800)
             if (key.startsWith("input:")) {
                 val id = key.removePrefix("input:")
-                _state.value.inputSources.find { it.id == id }?.let { launchInput(it) }
+                _state.value.inputSources.find { it.id == id }?.let {
+                    applyDisplayProfile(id)
+                    launchInput(it)
+                }
             } else {
                 _state.value.apps.find { it.key == key }?.let { launch(it) }
             }
@@ -1064,13 +1101,250 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun recomputeTvRows() {
-        val snapshot = _state.value
-        if (!snapshot.profile.isTv) return
-        val layout = snapshot.tvRows.ifEmpty { TvRowEngine.defaultLayout() }
-        val hideId = if (snapshot.settings.tvHideRowsAboveFocus) snapshot.tvFocusedRowId else null
-        val resolved = TvRowEngine.resolve(layout, snapshot, snapshot.tvLastUsed, hideId)
-        _state.update { it.copy(tvResolvedRows = resolved) }
+        viewModelScope.launch(Dispatchers.IO) {
+            val snapshot = _state.value
+            if (!snapshot.profile.isTv) return@launch
+            val watch = app.watchNextStore.snapshot()
+            val layout = snapshot.tvRows.ifEmpty { TvRowEngine.defaultLayout() }
+            val hideId = if (snapshot.settings.tvHideRowsAboveFocus) snapshot.tvFocusedRowId else null
+            val resolved = TvRowEngine.resolve(layout, snapshot, snapshot.tvLastUsed, hideId, watch)
+            _state.update {
+                it.copy(
+                    tvResolvedRows = resolved,
+                    tvWatchProgress = watch.mapValues { e -> e.value.progress },
+                )
+            }
+        }
     }
+
+    private fun refreshNowPlaying() {
+        val live = app.watchNextStore.liveSessions().values.maxByOrNull { it.updatedAt }
+        val info = if (live == null) {
+            NowPlayingInfo()
+        } else {
+            NowPlayingInfo(
+                packageName = live.packageName,
+                title = live.title,
+                artist = live.detail,
+                progress = live.progress,
+                artUri = live.previewUri,
+            )
+        }
+        if (info != _state.value.nowPlaying) {
+            _state.update { it.copy(nowPlaying = info) }
+            recomputeTvRows()
+        }
+    }
+
+    fun openProgramDetail(appInfo: AppInfo) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val w = app.watchNextStore.snapshot()[appInfo.packageName]
+            val ov = _state.value.tvOverrides[appInfo.key]
+            _state.update {
+                it.copy(
+                    overlay = Overlay.ProgramDetail,
+                    programDetail = ProgramDetail(
+                        app = appInfo,
+                        title = ov?.customLabel?.ifBlank { appInfo.label } ?: appInfo.label,
+                        subtitle = w?.title?.ifBlank { "İzlemeye devam" } ?: "İzlemeye devam",
+                        detail = w?.detail.orEmpty(),
+                        progress = w?.progress ?: 0f,
+                        previewUri = ov?.previewUri?.ifBlank { w?.previewUri.orEmpty() } ?: w?.previewUri.orEmpty(),
+                    ),
+                )
+            }
+        }
+    }
+
+    fun openTvAppEdit(appInfo: AppInfo) {
+        _state.update { it.copy(overlay = Overlay.TvAppEdit, editingTvApp = appInfo) }
+    }
+
+    fun saveTvAppOverride(appInfo: AppInfo, label: String, previewUri: String, mode: TvCardIconMode) {
+        viewModelScope.launch {
+            app.tvOverridesStore.upsert(
+                TvAppOverride(
+                    appKey = appInfo.key,
+                    customLabel = label.trim().takeIf { it != appInfo.label }.orEmpty(),
+                    previewUri = previewUri.trim(),
+                    iconMode = mode,
+                    customIconUri = _state.value.tvOverrides[appInfo.key]?.customIconUri.orEmpty(),
+                ),
+            )
+        }
+    }
+
+    fun clearTvAppOverride(appInfo: AppInfo) {
+        viewModelScope.launch {
+            app.tvOverridesStore.upsert(TvAppOverride(appKey = appInfo.key))
+        }
+    }
+
+    fun setTvAppIconUri(appInfo: AppInfo, uri: String) {
+        viewModelScope.launch {
+            val prev = _state.value.tvOverrides[appInfo.key] ?: TvAppOverride(appInfo.key)
+            app.tvOverridesStore.upsert(prev.copy(customIconUri = uri))
+        }
+    }
+
+    fun addAppToTvRow(rowId: String, appKey: String) {
+        viewModelScope.launch {
+            app.tvLayoutStore.update { TvRowEngine.addAppToRow(it, rowId, appKey) }
+            toast("Satıra eklendi")
+        }
+    }
+
+    fun addAppToNewCustomRow(appInfo: AppInfo) {
+        viewModelScope.launch {
+            app.tvLayoutStore.update {
+                it + TvRowEngine.newCustom(appInfo.label, listOf(appInfo.key))
+            }
+            toast("Özel satır oluşturuldu")
+        }
+    }
+
+    fun rememberTvCardFocus(rowId: String, appKey: String) {
+        if (!_state.value.settings.tvRememberFocus) return
+        _state.update { it.copy(tvFocusedAppKey = appKey) }
+        viewModelScope.launch { app.tvOverridesStore.rememberFocus(rowId, appKey) }
+    }
+
+    fun toggleBlockedInput(inputId: String) {
+        updateSettings { settings ->
+            val set = settings.tvBlockedInputs.split(',').map { it.trim() }.filter { it.isNotEmpty() }.toMutableSet()
+            if (!set.add(inputId)) set.remove(inputId)
+            settings.copy(tvBlockedInputs = set.joinToString(","))
+        }
+    }
+
+    fun toggleFamilySlot(slot: TvFamilySlot) {
+        updateSettings { settings ->
+            val set = settings.tvFamilySlots.split(',').map { it.trim() }.filter { it.isNotEmpty() }.toMutableSet()
+            if (!set.add(slot.name)) set.remove(slot.name)
+            settings.copy(tvFamilySlots = set.joinToString(","), tvParentalEnabled = true)
+        }
+    }
+
+    fun applyWallpaperProvider(kind: TvWallpaperKind, uri: String = "") {
+        viewModelScope.launch {
+            when (kind) {
+                TvWallpaperKind.BING -> {
+                    val url = WallpaperProviders.bingImageUrl().getOrNull().orEmpty()
+                    updateSettings { it.copy(tvWallpaperKind = TvWallpaperKind.BING, tvWallpaperUri = url) }
+                }
+                TvWallpaperKind.FOCUSED -> {
+                    updateSettings { it.copy(tvWallpaperKind = TvWallpaperKind.FOCUSED, tvWallpaperUri = "") }
+                }
+                TvWallpaperKind.URL, TvWallpaperKind.RTSP -> {
+                    updateSettings { it.copy(tvWallpaperKind = kind, tvWallpaperUri = uri) }
+                }
+                else -> updateSettings { it.copy(tvWallpaperKind = kind, tvWallpaperUri = uri) }
+            }
+        }
+    }
+
+    fun setLocaleTag(tag: String) {
+        updateSettings { it.copy(tvLocaleTag = tag) }
+        val locales = if (tag.isBlank()) LocaleListCompat.getEmptyLocaleList()
+        else LocaleListCompat.forLanguageTags(tag)
+        AppCompatDelegate.setApplicationLocales(locales)
+    }
+
+    fun openAccessibilitySettings() {
+        actionHandler.startSafe(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+    }
+
+    fun sideloadFromUrl(url: String) {
+        viewModelScope.launch {
+            _state.update { it.copy(sideloadUrl = url, updateStatus = "APK indiriliyor…") }
+            val result = SideloadInstaller(getApplication()).downloadAndInstall(url.trim())
+            result.onSuccess { intent ->
+                _state.update { it.copy(updateStatus = "", overlay = Overlay.None) }
+                actionHandler.startSafe(intent)
+            }.onFailure { err ->
+                _state.update { it.copy(updateStatus = "") }
+                toast(err.message ?: "İndirme başarısız")
+            }
+        }
+    }
+
+    fun runAutoBackup(force: Boolean = false) {
+        viewModelScope.launch(Dispatchers.IO) {
+            if (!force && !_state.value.settings.tvAutoBackup) return@launch
+            runCatching {
+                val json = app.backupRepository.exportJson()
+                app.autoBackupStore.save(json)
+                _state.update {
+                    it.copy(autoBackupFiles = app.autoBackupStore.list().map { f -> f.name })
+                }
+            }
+        }
+    }
+
+    fun restoreAutoBackup(fileName: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val file = app.autoBackupStore.list().firstOrNull { it.name == fileName } ?: return@launch
+            runCatching {
+                app.backupRepository.importJson(app.autoBackupStore.read(file))
+                toast("Yedek geri yüklendi")
+                closeOverlays()
+            }.onFailure { toast("Geri yükleme başarısız") }
+        }
+    }
+
+    fun refreshAutoBackupList() {
+        _state.update { it.copy(autoBackupFiles = app.autoBackupStore.list().map { f -> f.name }) }
+    }
+
+    fun importSettingsFromAdbUri(uri: Uri) {
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { app.backupRepository.importFrom(uri) }
+                .onSuccess { toast("ADB yedek içe aktarıldı") }
+                .onFailure { toast("ADB içe aktarma başarısız") }
+        }
+    }
+
+    fun saveDisplayProfileForInput(inputId: String) {
+        viewModelScope.launch {
+            val settings = _state.value.settings
+            val json = org.json.JSONObject(
+                settings.tvDisplayProfileJson.ifBlank { "{}" },
+            )
+            json.put(
+                inputId,
+                org.json.JSONObject()
+                    .put("wallpaperUri", settings.tvWallpaperUri)
+                    .put("wallpaperKind", settings.tvWallpaperKind.name)
+                    .put("dim", settings.tvWallpaperDim.toDouble()),
+            )
+            updateSettings { it.copy(tvDisplayProfileJson = json.toString()) }
+            toast("Giriş profili kaydedildi")
+        }
+    }
+
+    fun applyDisplayProfile(inputId: String) {
+        val raw = _state.value.settings.tvDisplayProfileJson
+        if (raw.isBlank()) return
+        runCatching {
+            val obj = org.json.JSONObject(raw).optJSONObject(inputId) ?: return
+            updateSettings {
+                it.copy(
+                    tvWallpaperUri = obj.optString("wallpaperUri", it.tvWallpaperUri),
+                    tvWallpaperKind = enumOr(obj.optString("wallpaperKind"), it.tvWallpaperKind),
+                    tvWallpaperDim = obj.optDouble("dim", it.tvWallpaperDim.toDouble()).toFloat(),
+                )
+            }
+        }
+    }
+
+    private fun maybeAutoBackup() {
+        if (_state.value.settings.tvAutoBackup && _state.value.profile.isTv) {
+            runAutoBackup()
+        }
+    }
+
+    private inline fun <reified T : Enum<T>> enumOr(raw: String, fallback: T): T =
+        runCatching { java.lang.Enum.valueOf(T::class.java, raw) }.getOrDefault(fallback)
 
     fun exportBackup(uri: Uri) {
         viewModelScope.launch(Dispatchers.IO) {
@@ -1157,7 +1431,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             Overlay.WidgetPicker -> profile.widgets
             Overlay.Vault -> profile.vault
             Overlay.Folder -> profile.folders
-            Overlay.Idle, Overlay.Calibration, Overlay.TvRows -> profile.isTv
+            Overlay.Idle, Overlay.Calibration, Overlay.TvRows,
+            Overlay.AllApps, Overlay.ProgramDetail, Overlay.Sideload,
+            Overlay.TvAppEdit, Overlay.AutoBackups,
+            -> profile.isTv
         }
     }
 

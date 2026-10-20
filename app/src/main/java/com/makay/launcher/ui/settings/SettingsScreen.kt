@@ -62,7 +62,9 @@ import com.makay.launcher.domain.HomeStyle
 import com.makay.launcher.domain.HomeUiState
 import com.makay.launcher.domain.IconShape
 import com.makay.launcher.domain.Overlay
+import com.makay.launcher.domain.TvCardIconMode
 import com.makay.launcher.domain.TvCardSize
+import com.makay.launcher.domain.TvFamilySlot
 import com.makay.launcher.domain.TvFocusEffect
 import com.makay.launcher.domain.TvIdleAction
 import com.makay.launcher.domain.TvWallpaperKind
@@ -384,6 +386,7 @@ fun SettingsScreen(state: HomeUiState, viewModel: HomeViewModel) {
                                 TvIdleAction.NONE -> "Yok"
                                 TvIdleAction.SCREENSAVER -> "Koruyucu"
                                 TvIdleAction.DIM -> "Karart"
+                                TvIdleAction.STANDBY -> "Bekleme"
                             },
                             settings.tvIdleAction == action,
                         ) { viewModel.updateSettings { it.copy(tvIdleAction = action) } }
@@ -454,6 +457,132 @@ fun SettingsScreen(state: HomeUiState, viewModel: HomeViewModel) {
                 } else {
                     state.engineeringMenus.forEach { label ->
                         DpadAction(label) { viewModel.openEngineeringMenu(label) }
+                    }
+                }
+            }
+
+            Section("TV · Gelişmiş") {
+                Toggle("Odak hatırla", settings.tvRememberFocus) {
+                    viewModel.updateSettings { s -> s.copy(tvRememberFocus = it) }
+                }
+                Toggle("Burn-in soldurma", settings.tvBurnInFade) {
+                    viewModel.updateSettings { s -> s.copy(tvBurnInFade = it) }
+                }
+                Toggle("Saati göster", settings.tvShowClock) {
+                    viewModel.updateSettings { s -> s.copy(tvShowClock = it) }
+                }
+                Toggle("Ayarlar kartını gizle", settings.tvHideSettingsChip) {
+                    viewModel.updateSettings { s -> s.copy(tvHideSettingsChip = it) }
+                }
+                Toggle("Video/önizleme odak", settings.tvVideoPreviewOnFocus) {
+                    viewModel.updateSettings { s -> s.copy(tvVideoPreviewOnFocus = it) }
+                }
+                Toggle("İlerleme çubuğu", settings.tvWatchProgressBar) {
+                    viewModel.updateSettings { s -> s.copy(tvWatchProgressBar = it) }
+                }
+                Toggle("Açılışta ekran koruyucu", settings.tvBootToScreensaver) {
+                    viewModel.updateSettings { s -> s.copy(tvBootToScreensaver = it) }
+                }
+                Toggle("Misafir kilidi", settings.tvGuestLock) {
+                    viewModel.updateSettings { s -> s.copy(tvGuestLock = it) }
+                }
+                Toggle("Erişilebilirlik yardımı", settings.tvAccessibilityAssist) {
+                    viewModel.updateSettings { s -> s.copy(tvAccessibilityAssist = it) }
+                }
+                DpadAction("Erişilebilirlik ayarlarını aç", onClick = viewModel::openAccessibilitySettings)
+                Toggle("Otomatik yedek", settings.tvAutoBackup) {
+                    viewModel.updateSettings { s -> s.copy(tvAutoBackup = it) }
+                }
+                DpadAction("Otomatik yedekler") {
+                    viewModel.refreshAutoBackupList()
+                    viewModel.open(Overlay.AutoBackups)
+                }
+                DpadAction("URL’den APK kur") { viewModel.open(Overlay.Sideload) }
+                Text("Kart aralığı", color = Paper.copy(alpha = 0.7f), fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf(8, 14, 20, 28).forEach { sp ->
+                        DpadChip("${sp}dp", settings.tvCardSpacing == sp) {
+                            viewModel.updateSettings { it.copy(tvCardSpacing = sp) }
+                        }
+                    }
+                }
+                Text("Varsayılan ikon/banner", color = Paper.copy(alpha = 0.7f), fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    DpadChip("İkon", settings.tvCardIconMode == TvCardIconMode.ICON) {
+                        viewModel.updateSettings { it.copy(tvCardIconMode = TvCardIconMode.ICON) }
+                    }
+                    DpadChip("Banner", settings.tvCardIconMode == TvCardIconMode.BANNER) {
+                        viewModel.updateSettings { it.copy(tvCardIconMode = TvCardIconMode.BANNER) }
+                    }
+                }
+                Text("Video zoom", color = Paper.copy(alpha = 0.7f), fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf(0.9f, 1f, 1.1f, 1.25f).forEach { z ->
+                        DpadChip("${z}x", settings.tvVideoZoom == z) {
+                            viewModel.updateSettings { it.copy(tvVideoZoom = z) }
+                        }
+                    }
+                }
+                Text("Wallpaper sağlayıcı", color = Paper.copy(alpha = 0.7f), fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    DpadChip("Bing", settings.tvWallpaperKind == TvWallpaperKind.BING) {
+                        viewModel.applyWallpaperProvider(TvWallpaperKind.BING)
+                    }
+                    DpadChip("Odak kartı", settings.tvWallpaperKind == TvWallpaperKind.FOCUSED) {
+                        viewModel.applyWallpaperProvider(TvWallpaperKind.FOCUSED)
+                    }
+                }
+                Text("Kontrast / doygunluk / hue", color = Paper.copy(alpha = 0.7f), fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf(0.8f, 1f, 1.2f).forEach { v ->
+                        DpadChip("K$v", settings.tvWallpaperContrast == v) {
+                            viewModel.updateSettings { it.copy(tvWallpaperContrast = v) }
+                        }
+                    }
+                    listOf(0.7f, 1f, 1.3f).forEach { v ->
+                        DpadChip("D$v", settings.tvWallpaperSaturation == v) {
+                            viewModel.updateSettings { it.copy(tvWallpaperSaturation = v) }
+                        }
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 6.dp)) {
+                    listOf(-30f, 0f, 30f).forEach { h ->
+                        DpadChip("H${h.toInt()}", settings.tvWallpaperHue == h) {
+                            viewModel.updateSettings { it.copy(tvWallpaperHue = h) }
+                        }
+                    }
+                }
+                Text("Aile programı", color = Paper.copy(alpha = 0.7f), fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    TvFamilySlot.entries.forEach { slot ->
+                        val on = settings.tvFamilySlots.split(',').map { it.trim() }.contains(slot.name)
+                        DpadChip(slot.title, selected = on) { viewModel.toggleFamilySlot(slot) }
+                    }
+                }
+                Text("HDMI engelle", color = Paper.copy(alpha = 0.7f), fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    state.inputSources.take(6).forEach { src ->
+                        val blocked = settings.tvBlockedInputs.split(',').map { it.trim() }.contains(src.id)
+                        DpadChip(src.label.take(12), selected = blocked) {
+                            viewModel.toggleBlockedInput(src.id)
+                        }
+                    }
+                }
+                Text("Dil", color = Paper.copy(alpha = 0.7f), fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    DpadChip("Sistem", settings.tvLocaleTag.isBlank()) { viewModel.setLocaleTag("") }
+                    DpadChip("TR", settings.tvLocaleTag == "tr") { viewModel.setLocaleTag("tr") }
+                    DpadChip("EN", settings.tvLocaleTag == "en") { viewModel.setLocaleTag("en") }
+                }
+                Text(
+                    "ADB: adb shell am start -a com.makay.launcher.IMPORT_SETTINGS -d content://…",
+                    color = Paper.copy(alpha = 0.55f),
+                    fontSize = 11.sp,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+                if (state.inputSources.isNotEmpty()) {
+                    DpadAction("Aktif HDMI için profil kaydet") {
+                        viewModel.saveDisplayProfileForInput(state.inputSources.first().id)
                     }
                 }
             }

@@ -47,7 +47,10 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.graphicsLayer
+import com.makay.launcher.domain.WatchNextItem
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -108,12 +111,14 @@ fun TvHome(state: HomeUiState, viewModel: HomeViewModel) {
             }
     }
 
+    val fadeAlpha = if (state.tvIdleFaded) 0.45f else 1f
     Box(modifier = Modifier.fillMaxSize()) {
         TvWallpaperLayer(state)
         LazyColumn(
             state = listState,
             modifier = Modifier
                 .fillMaxSize()
+                .graphicsLayer { alpha = fadeAlpha }
                 .onPreviewKeyEvent { event ->
                     viewModel.bumpIdle()
                     event.key == Key.ChannelUp || event.key == Key.ChannelDown
@@ -122,7 +127,9 @@ fun TvHome(state: HomeUiState, viewModel: HomeViewModel) {
             verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
             item {
-                Text(clock, color = Paper, fontSize = 56.sp, style = MaterialTheme.typography.displaySmall)
+                if (state.settings.tvShowClock) {
+                    Text(clock, color = Paper, fontSize = 56.sp, style = MaterialTheme.typography.displaySmall)
+                }
                 Text(
                     if (state.isDefaultLauncher) "Kumanda ile gezinin · OK ile açın · Menü ile düzenleyin"
                     else "Henüz varsayılan değil · Ayarlar’dan Ana ekran uygulamasını Makay yapın",
@@ -145,12 +152,24 @@ fun TvHome(state: HomeUiState, viewModel: HomeViewModel) {
 @Composable
 private fun TvWallpaperLayer(state: HomeUiState) {
     val settings = state.settings
-    if (settings.tvWallpaperKind == TvWallpaperKind.NONE || settings.tvWallpaperUri.isBlank()) return
-    val uri = Uri.parse(settings.tvWallpaperUri)
+    val focusedPreview = state.tvFocusedAppKey?.let { key ->
+        state.tvOverrides[key]?.previewUri?.ifBlank { null }
+            ?: state.tvOverrides[key]?.customIconUri?.ifBlank { null }
+    }
+    val rawUri = when (settings.tvWallpaperKind) {
+        TvWallpaperKind.NONE -> ""
+        TvWallpaperKind.FOCUSED -> focusedPreview.orEmpty().ifBlank { settings.tvWallpaperUri }
+        else -> settings.tvWallpaperUri
+    }
+    if (settings.tvWallpaperKind == TvWallpaperKind.NONE || rawUri.isBlank()) return
+    val uri = Uri.parse(rawUri)
     val blurMod = if (settings.tvWallpaperBlur > 0 && Build.VERSION.SDK_INT >= 31) {
         Modifier.blur(settings.tvWallpaperBlur.dp)
     } else {
         Modifier
+    }
+    val matrix = remember(settings.tvWallpaperContrast, settings.tvWallpaperSaturation, settings.tvWallpaperHue) {
+        colorAdjustMatrix(settings.tvWallpaperContrast, settings.tvWallpaperSaturation, settings.tvWallpaperHue)
     }
     Box(
         modifier = Modifier
@@ -159,15 +178,26 @@ private fun TvWallpaperLayer(state: HomeUiState) {
             .graphicsLayer { alpha = settings.tvWallpaperBrightness.coerceIn(0.2f, 1f) },
     ) {
         when (settings.tvWallpaperKind) {
-            TvWallpaperKind.VIDEO -> TvVideoWallpaper(uri)
-            TvWallpaperKind.IMAGE, TvWallpaperKind.GIF -> {
+            TvWallpaperKind.VIDEO, TvWallpaperKind.RTSP -> TvVideoWallpaper(uri, settings.tvVideoZoom)
+            TvWallpaperKind.URL -> {
+                if (rawUri.lowercase().startsWith("rtsp") || rawUri.contains(".mp4")) {
+                    TvVideoWallpaper(uri, settings.tvVideoZoom)
+                } else {
+                    AsyncImage(
+                        model = ImageRequest.Builder(LocalContext.current).data(uri).crossfade(true).build(),
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        colorFilter = ColorFilter.colorMatrix(matrix),
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+            }
+            TvWallpaperKind.IMAGE, TvWallpaperKind.GIF, TvWallpaperKind.BING, TvWallpaperKind.FOCUSED -> {
                 AsyncImage(
-                    model = ImageRequest.Builder(LocalContext.current)
-                        .data(uri)
-                        .crossfade(true)
-                        .build(),
+                    model = ImageRequest.Builder(LocalContext.current).data(uri).crossfade(true).build(),
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
+                    colorFilter = ColorFilter.colorMatrix(matrix),
                     modifier = Modifier.fillMaxSize(),
                 )
             }
@@ -181,8 +211,34 @@ private fun TvWallpaperLayer(state: HomeUiState) {
     }
 }
 
+private fun colorAdjustMatrix(contrast: Float, saturation: Float, hueDeg: Float): ColorMatrix {
+    val c = ColorMatrix().apply { setToSaturation(saturation.coerceIn(0f, 2f)) }
+    val contrastM = ColorMatrix(
+        floatArrayOf(
+            contrast, 0f, 0f, 0f, (1f - contrast) * 128f,
+            0f, contrast, 0f, 0f, (1f - contrast) * 128f,
+            0f, 0f, contrast, 0f, (1f - contrast) * 128f,
+            0f, 0f, 0f, 1f, 0f,
+        ),
+    )
+    c.timesAssign(contrastM)
+    if (hueDeg != 0f) {
+        val shift = (hueDeg.coerceIn(-180f, 180f) / 180f) * 0.15f
+        val hue = ColorMatrix(
+            floatArrayOf(
+                1f, shift, 0f, 0f, 0f,
+                0f, 1f, shift, 0f, 0f,
+                shift, 0f, 1f, 0f, 0f,
+                0f, 0f, 0f, 1f, 0f,
+            ),
+        )
+        c.timesAssign(hue)
+    }
+    return c
+}
+
 @Composable
-private fun TvVideoWallpaper(uri: Uri) {
+private fun TvVideoWallpaper(uri: Uri, zoom: Float = 1f) {
     AndroidView(
         factory = { context ->
             VideoView(context).apply {
@@ -199,6 +255,8 @@ private fun TvVideoWallpaper(uri: Uri) {
             }
         },
         update = { view ->
+            view.scaleX = zoom.coerceIn(0.8f, 1.4f)
+            view.scaleY = zoom.coerceIn(0.8f, 1.4f)
             if (view.tag != uri.toString()) {
                 view.tag = uri.toString()
                 view.setVideoURI(uri)
@@ -214,9 +272,10 @@ private fun TvVideoWallpaper(uri: Uri) {
 
 @Composable
 private fun TvResolvedRowUi(row: TvResolvedRow, state: HomeUiState, viewModel: HomeViewModel) {
+    val spacing = state.settings.tvCardSpacing.coerceIn(6, 28).dp
     when {
         row.isActions -> TvActionRow(state, viewModel)
-        row.isLetters -> TvRow(title = row.def.displayTitle) {
+        row.isLetters -> TvRow(title = row.def.displayTitle, spacing = spacing) {
             ('A'..'Z').forEach { letter ->
                 TvFocusCard(letter.toString(), state, viewModel, onClick = {
                     viewModel.open(Overlay.Search)
@@ -224,17 +283,21 @@ private fun TvResolvedRowUi(row: TvResolvedRow, state: HomeUiState, viewModel: H
                 })
             }
         }
-        row.inputs.isNotEmpty() -> TvRow(title = row.def.displayTitle) {
+        row.inputs.isNotEmpty() -> TvRow(title = row.def.displayTitle, spacing = spacing) {
             row.inputs.forEach { source ->
                 TvFocusCard(label = source.label, state = state, viewModel = viewModel, onClick = {
                     viewModel.launchInput(source)
-                })
+                }, onLongClick = { viewModel.toggleBlockedInput(source.id) })
             }
         }
-        else -> TvRow(title = row.def.displayTitle) {
+        row.watchItems.isNotEmpty() -> TvRow(title = row.def.displayTitle, spacing = spacing) {
+            row.watchItems.forEach { item ->
+                TvWatchCard(item, row.def.id, state, viewModel)
+            }
+        }
+        else -> TvRow(title = row.def.displayTitle, spacing = spacing) {
             row.apps.forEach { app ->
-                val watch = row.def.builtin == TvBuiltinRow.WATCH_NEXT
-                TvAppCard(app, state, viewModel, showProgress = watch)
+                TvAppCard(app, row.def.id, state, viewModel)
             }
         }
     }
@@ -242,11 +305,16 @@ private fun TvResolvedRowUi(row: TvResolvedRow, state: HomeUiState, viewModel: H
 
 @Composable
 private fun TvActionRow(state: HomeUiState, viewModel: HomeViewModel) {
-    TvRow(title = "Hızlı erişim") {
-        TvFocusCard("Tüm uygulamalar", state, viewModel, onClick = { viewModel.open(Overlay.Drawer) })
+    val spacing = state.settings.tvCardSpacing.coerceIn(6, 28).dp
+    TvRow(title = "Hızlı erişim", spacing = spacing) {
+        TvFocusCard("Tüm uygulamalar", state, viewModel, onClick = { viewModel.open(Overlay.AllApps) })
+        TvFocusCard("Çekmece", state, viewModel, onClick = { viewModel.open(Overlay.Drawer) })
         TvFocusCard("Ara", state, viewModel, onClick = { viewModel.open(Overlay.Search) })
-        TvFocusCard("Ayarlar", state, viewModel, onClick = { viewModel.open(Overlay.Settings) })
+        if (!state.settings.tvHideSettingsChip) {
+            TvFocusCard("Ayarlar", state, viewModel, onClick = { viewModel.open(Overlay.Settings) })
+        }
         TvFocusCard("Satırlar", state, viewModel, onClick = { viewModel.open(Overlay.TvRows) })
+        TvFocusCard("APK kur", state, viewModel, onClick = { viewModel.open(Overlay.Sideload) })
         TvFocusCard("Ekran koruyucu", state, viewModel, onClick = { viewModel.openDreamSettings() })
         TvFocusCard("Duvar kağıdı", state, viewModel, onClick = { viewModel.openWallpaperPicker() })
         if (!state.isDefaultLauncher) {
@@ -256,12 +324,12 @@ private fun TvActionRow(state: HomeUiState, viewModel: HomeViewModel) {
 }
 
 @Composable
-private fun TvRow(title: String, content: @Composable RowScope.() -> Unit) {
+private fun TvRow(title: String, spacing: androidx.compose.ui.unit.Dp = 14.dp, content: @Composable RowScope.() -> Unit) {
     Column {
         Text(title, color = Paper, style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(bottom = 8.dp))
         Row(
             modifier = Modifier.horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            horizontalArrangement = Arrangement.spacedBy(spacing),
         ) {
             content()
         }
@@ -269,28 +337,67 @@ private fun TvRow(title: String, content: @Composable RowScope.() -> Unit) {
 }
 
 @Composable
+private fun TvWatchCard(item: WatchNextItem, rowId: String, state: HomeUiState, viewModel: HomeViewModel) {
+    val showBar = state.settings.tvWatchProgressBar
+    val preview = item.previewUri
+    val showPreview = state.settings.tvVideoPreviewOnFocus && preview.isNotBlank()
+    var focused by remember { mutableStateOf(false) }
+    TvFocusCard(
+        label = state.tvOverrides[item.app.key]?.customLabel?.ifBlank { item.app.label } ?: item.app.label,
+        state = state,
+        viewModel = viewModel,
+        onClick = { viewModel.launch(item.app) },
+        onLongClick = { viewModel.openProgramDetail(item.app) },
+        subtitle = item.subtitle,
+        progress = if (showBar) item.progress else 0f,
+        onFocused = {
+            focused = it
+            if (it) viewModel.rememberTvCardFocus(rowId, item.app.key)
+        },
+    ) {
+        if (showPreview && focused) {
+            AsyncImage(
+                model = preview,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxWidth().height(72.dp).clip(RoundedCornerShape(10.dp)),
+            )
+            Spacer(Modifier.height(8.dp))
+        } else {
+            HomeApp(item.app, state, viewModel, showLabel = false, iconSize = state.settings.tvCardSize.iconDp.dp)
+            Spacer(Modifier.height(8.dp))
+        }
+    }
+}
+
+@Composable
 private fun TvAppCard(
     app: AppInfo,
+    rowId: String,
     state: HomeUiState,
     viewModel: HomeViewModel,
-    showProgress: Boolean = false,
 ) {
-    val progress = if (showProgress) {
-        ((app.usageCount % 10) / 10f).coerceIn(0.15f, 0.95f)
-    } else {
-        0f
-    }
+    val ov = state.tvOverrides[app.key]
+    val label = ov?.customLabel?.ifBlank { app.label } ?: app.label
     TvFocusCard(
-        label = app.label,
+        label = label,
         state = state,
         viewModel = viewModel,
         onClick = { viewModel.launch(app) },
         onLongClick = { viewModel.openShutter(app) },
-        subtitle = if (showProgress) "İzlemeye devam" else null,
-        progress = progress,
+        onFocused = { if (it) viewModel.rememberTvCardFocus(rowId, app.key) },
     ) {
-        HomeApp(app, state, viewModel, showLabel = false, iconSize = state.settings.tvCardSize.iconDp.dp)
-        Spacer(Modifier.height(8.dp))
+        if (!ov?.customIconUri.isNullOrBlank()) {
+            AsyncImage(
+                model = ov?.customIconUri,
+                contentDescription = null,
+                modifier = Modifier.width(state.settings.tvCardSize.iconDp.dp).height(state.settings.tvCardSize.iconDp.dp),
+            )
+            Spacer(Modifier.height(8.dp))
+        } else {
+            HomeApp(app, state, viewModel, showLabel = false, iconSize = state.settings.tvCardSize.iconDp.dp)
+            Spacer(Modifier.height(8.dp))
+        }
     }
 }
 
@@ -303,6 +410,7 @@ fun TvFocusCard(
     onLongClick: () -> Unit = {},
     subtitle: String? = null,
     progress: Float = 0f,
+    onFocused: (Boolean) -> Unit = {},
     leading: @Composable () -> Unit = {},
 ) {
     val settings = state.settings
@@ -353,6 +461,7 @@ fun TvFocusCard(
             )
             .onFocusChanged {
                 focused = it.isFocused
+                onFocused(it.isFocused)
                 if (it.isFocused) viewModel.bumpIdle()
             }
             .focusable()

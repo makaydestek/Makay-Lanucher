@@ -50,6 +50,7 @@ class HomeActivity : FragmentActivity() {
             if (viewModel.state.value.profile.biometric) promptBiometric(title, onResult)
             else onResult(true)
         }
+        handleImportIntent(intent)
         enableEdgeToEdge()
         setContent {
             val state = viewModel.state.collectAsStateWithLifecycle().value
@@ -89,7 +90,22 @@ class HomeActivity : FragmentActivity() {
 
     override fun onNewIntent(intent: android.content.Intent) {
         super.onNewIntent(intent)
+        handleImportIntent(intent)
         viewModel.closeOverlays()
+    }
+
+    private fun handleImportIntent(intent: android.content.Intent?) {
+        if (intent?.action != "com.makay.launcher.IMPORT_SETTINGS") return
+        @Suppress("DEPRECATION")
+        val uri = intent.data
+            ?: intent.getParcelableExtra<android.net.Uri>("uri")
+            ?: intent.clipData?.getItemAt(0)?.uri
+        uri?.let(viewModel::importSettingsFromAdbUri)
+        val parental = intent.getStringExtra(com.makay.launcher.data.MakayAccessibilityService.EXTRA_PARENTAL_PKG)
+        if (!parental.isNullOrBlank()) {
+            val appInfo = viewModel.state.value.apps.find { it.packageName == parental }
+            if (appInfo != null) viewModel.launch(appInfo)
+        }
     }
 
     override fun onResume() {
